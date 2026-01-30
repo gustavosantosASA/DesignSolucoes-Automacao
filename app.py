@@ -46,6 +46,11 @@ def setup_page():
         .step-badge { background-color: #f1f5f9; color: #475569 !important; font-weight: 700; padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; border: 1px solid #cbd5e1; white-space: nowrap; }
         .step-title { font-size: 1.1rem; font-weight: 600; color: #1e293b !important; margin: 0; line-height: 1.2; }
         
+        /* BALÕES DE ETAPA CONCLUÍDA (Resumo) */
+        .step-summary { background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 20px; margin-bottom: 15px; display: flex; align-items: center; gap: 15px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
+        .step-check { background-color: #16a34a; color: white !important; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; }
+        .step-text { color: #15803d !important; font-weight: 600; font-size: 0.9rem; margin: 0; }
+
         .kpi-card { background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.03); text-align: left; height: 100%; display: flex; flex-direction: column; justify-content: center; cursor: help; transition: all 0.3s ease; }
         .kpi-card:hover { border-color: #94a3b8; transform: translateY(-3px); box-shadow: 0 4px 10px rgba(0,0,0,0.06); }
         .kpi-value { font-size: 1.6rem; font-weight: 700; color: #0f172a !important; margin: 8px 0; letter-spacing: -0.5px; }
@@ -285,6 +290,7 @@ def main():
                 else: st.error("Erro no cálculo.")
 
     # ETAPA 4 (DASHBOARD)
+    if st.session_state.current_step > 4: st.markdown("""<div class="step-summary"><div class="step-check">✓</div><div class="step-text">Etapa 4: Análise Concluída.</div></div>""", unsafe_allow_html=True)
     if st.session_state.current_step == 4:
         stats = st.session_state.final_stats
         st.markdown("""<div class="step-header-card"><span class="step-badge">ETAPA 4</span><h3 class="step-title">Dashboard de Análise</h3></div>""", unsafe_allow_html=True)
@@ -337,7 +343,7 @@ def main():
                 del st.session_state.selected_row
                 st.rerun()
 
-        # TABELA (POSICIONADA APÓS OS CARDS E ANTES DOS GRÁFICOS)
+        # TABELA
         st.markdown("---")
         st.subheader("📋 Detalhamento por SKU (Drill-Down)")
         st.markdown("Selecione uma linha na tabela abaixo para filtrar os gráficos.")
@@ -369,7 +375,7 @@ def main():
             st.subheader("📊 Evolução e Sazonalidade")
             pdf = daily_agg.to_pandas()
             
-            # Gráfico de Barras Clean
+            # Gráfico de Barras
             fig = px.bar(pdf, x="Data", y="Quantidade", template="plotly_white")
             fig.update_layout(
                 paper_bgcolor='rgba(0,0,0,0)', 
@@ -383,7 +389,7 @@ def main():
             fig.update_traces(marker_color="#2563eb")
             st.plotly_chart(fig, use_container_width=True)
             
-            # Heatmap "Premium"
+            # Heatmap
             pdf["Data"] = pd.to_datetime(pdf["Data"])
             min_d = pdf["Data"].min()
             dates = pd.date_range(start=min_d, periods=54*7, freq='D')
@@ -392,15 +398,7 @@ def main():
             hm["W"] = hm["Data"].dt.strftime("%Y-W%U")
             hm["D"] = hm["Data"].dt.strftime("%a")
             
-            # Escala de cores corporativa (Cinza claro -> Azul Petróleo Profundo)
-            custom_colors = [
-                [0.0, "#f1f5f9"],   # Zero/Baixo - Slate 100
-                [0.2, "#cbd5e1"],   # Slate 300
-                [0.4, "#94a3b8"],   # Slate 400
-                [0.6, "#2dd4bf"],   # Teal 400
-                [0.8, "#0d9488"],   # Teal 600
-                [1.0, "#0f766e"]    # Teal 700
-            ]
+            custom_colors = [[0.0, "#f1f5f9"], [0.2, "#cbd5e1"], [0.4, "#94a3b8"], [0.6, "#2dd4bf"], [0.8, "#0d9488"], [1.0, "#0f766e"]]
 
             fig_hm = px.density_heatmap(
                 hm, x="W", y="D", z="Quantidade", 
@@ -419,7 +417,6 @@ def main():
                 yaxis=dict(showgrid=False, title=None),
                 coloraxis_colorbar=dict(title="Vol", thickness=15, len=0.7)
             )
-            # Cria o efeito de "azulejos" com espaçamento
             fig_hm.update_traces(xgap=4, ygap=4, hovertemplate="Semana: %{x}<br>Dia: %{y}<br>Vol: %{z}<extra></extra>")
             
             st.plotly_chart(fig_hm, use_container_width=True)
