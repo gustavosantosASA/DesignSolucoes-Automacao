@@ -6,9 +6,10 @@ import plotly.graph_objects as go
 import io
 import time
 from datetime import timedelta
+import concurrent.futures
 
 # ==============================================================================
-# 1. SETUP & CSS
+# 1. SETUP & CSS (FORÇANDO TOTALMENTE O LIGHT MODE)
 # ==============================================================================
 
 def setup_page():
@@ -20,12 +21,10 @@ def setup_page():
     )
 
     # CSS REFORÇADO PARA FORÇAR MODO CLARO
-    # Mesmo com config.toml, isso garante a estilização dos cards personalizados
     st.markdown("""
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         
-        /* Força as variáveis raiz para cores claras */
         :root {
             --primary-color: #2563eb;
             --background-color: #f8fafc;
@@ -34,7 +33,6 @@ def setup_page():
             --font: "Inter", sans-serif;
         }
 
-        /* Aplicação Geral */
         .stApp {
             background-color: #f8fafc !important;
             color: #334155 !important;
@@ -43,12 +41,10 @@ def setup_page():
         [data-testid="stSidebar"] { display: none; }
         #MainMenu, header, footer { visibility: hidden; }
         
-        /* Textos - Força cor escura */
         h1, h2, h3, h4, h5, h6, p, div, span, label, li, .stMarkdown {
             color: #334155 !important;
         }
         
-        /* Títulos Específicos */
         .stMarkdown h3 {
             color: #1e293b !important;
         }
@@ -102,15 +98,12 @@ def setup_page():
         .kpi-sub { font-size: 0.7rem; color: #94a3b8 !important; margin-top: 2px; }
 
         /* --- COMPONENTES NATIVOS (FORÇAR BRANCO) --- */
-        
-        /* Inputs de Texto e Selectbox */
         .stTextInput input, .stSelectbox div[data-baseweb="select"] > div, .stMultiSelect div[data-baseweb="select"] > div {
             background-color: #ffffff !important;
             color: #334155 !important;
             border-color: #e2e8f0 !important;
         }
         
-        /* Dropdowns (Lista de opções) */
         ul[data-baseweb="menu"] {
             background-color: #ffffff !important;
         }
@@ -118,18 +111,18 @@ def setup_page():
             color: #334155 !important;
         }
         
-        /* File Uploader */
         [data-testid="stFileUploadDropzone"] {
             background-color: #ffffff !important;
             border-color: #e2e8f0 !important;
         }
-        
-        /* Dataframes */
+        [data-testid="stFileUploadDropzone"] div, [data-testid="stFileUploadDropzone"] span {
+            color: #64748b !important;
+        }
+
         [data-testid="stDataFrame"] {
             background-color: #ffffff !important;
         }
 
-        /* Botões */
         div.stButton > button { 
             border-radius: 8px; 
             font-weight: 600; 
@@ -144,31 +137,43 @@ def setup_page():
             background-color: #f8fafc !important;
         }
         
-        /* Remove padding extra do topo */
         .block-container { padding-top: 2rem; }
         </style>
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. MOTOR DE DADOS
+# 2. MOTOR DE DADOS OTIMIZADO
 # ==============================================================================
 
 @st.cache_data(show_spinner=False)
 def load_sample(file) -> pl.DataFrame:
     try:
-        if file.name.endswith('.csv'): return pl.read_csv(file, n_rows=100, ignore_errors=True, try_parse_dates=True)
-        else: return pl.read_excel(file) 
+        # Usa 'calamine' para Excel se disponível (muito mais rápido)
+        if file.name.endswith('.csv'): 
+            return pl.read_csv(file, n_rows=100, ignore_errors=True, try_parse_dates=True)
+        else: 
+            try:
+                return pl.read_excel(file, engine="calamine")
+            except:
+                return pl.read_excel(file) 
     except: return pl.DataFrame()
 
 def load_full_safe(file) -> pl.DataFrame:
+    """Carregamento OTIMIZADO: Usa engine 'calamine' para Excel (Rust-based)."""
     try:
         if file.name.endswith('.csv'):
             return pl.read_csv(file, ignore_errors=True, try_parse_dates=True, infer_schema_length=0)
         else:
-            try: return pl.read_excel(file)
-            except: 
-                file.seek(0)
-                return pl.from_pandas(pd.read_excel(file))
+            try:
+                # Tenta usar calamine (instale: pip install fastexcel)
+                return pl.read_excel(file, engine="calamine")
+            except:
+                try:
+                    return pl.read_excel(file) # Fallback padrão
+                except:
+                    # Fallback Pandas se Polars falhar na estrutura
+                    file.seek(0)
+                    return pl.from_pandas(pd.read_excel(file))
     except: return pl.DataFrame()
 
 def load_dim_full(file) -> pl.DataFrame:
@@ -179,56 +184,70 @@ def load_dim_full(file) -> pl.DataFrame:
         return df
     except: return pl.DataFrame()
 
-def process_etl_batch(files, mapping, split_dt, dt_source):
-    dfs = []
-    required_cols = ["Depósito", "SKU", "Pedido", "Caixa", "Data", "Hora", "Quantidade", "Rota/Destino"]
+def process_single_file(file, mapping, split_dt, dt_source, required_cols):
+    """Função auxiliar para processamento paralelo."""
+    df_raw = load_full_safe(file)
+    if df_raw.is_empty(): return None
     
-    prog_bar = st.progress(0, text="Lendo arquivos...")
-    total = len(files)
-
-    for i, f in enumerate(files):
-        prog_bar.progress((i+1)/total, text=f"Processando: {f.name}")
-        df_raw = load_full_safe(f)
-        if df_raw.is_empty(): continue
-        
-        try:
-            exprs = []
-            if split_dt and dt_source in df_raw.columns:
-                try:
-                    tc = pl.col(dt_source).str.to_datetime(strict=False)
-                    exprs.extend([tc.dt.date().alias("Data"), tc.dt.time().alias("Hora")])
-                except:
-                    exprs.extend([pl.col(dt_source).alias("Data"), pl.lit(None).alias("Hora")])
-            else:
-                for target in ["Data", "Hora"]:
-                    src = mapping.get(target)
-                    if src and src in df_raw.columns:
-                        if target == "Data":
-                            try: exprs.append(pl.col(src).str.to_datetime(strict=False).dt.date().alias("Data"))
-                            except: exprs.append(pl.col(src).alias("Data"))
-                        else:
-                            try: exprs.append(pl.col(src).str.to_time(strict=False).alias("Hora"))
-                            except: exprs.append(pl.col(src).alias("Hora"))
-                    else:
-                        exprs.append(pl.lit(None).alias(target))
-
-            for target in ["Depósito", "SKU", "Pedido", "Caixa", "Quantidade", "Rota/Destino"]:
+    try:
+        exprs = []
+        if split_dt and dt_source in df_raw.columns:
+            try:
+                tc = pl.col(dt_source).str.to_datetime(strict=False)
+                exprs.extend([tc.dt.date().alias("Data"), tc.dt.time().alias("Hora")])
+            except:
+                exprs.extend([pl.col(dt_source).alias("Data"), pl.lit(None).alias("Hora")])
+        else:
+            for target in ["Data", "Hora"]:
                 src = mapping.get(target)
                 if src and src in df_raw.columns:
-                    if target == "Quantidade":
-                        exprs.append(pl.col(src).cast(pl.Utf8).str.replace(",", ".").cast(pl.Float64, strict=False).alias(target))
+                    if target == "Data":
+                        try: exprs.append(pl.col(src).str.to_datetime(strict=False).dt.date().alias("Data"))
+                        except: exprs.append(pl.col(src).alias("Data"))
                     else:
-                        exprs.append(pl.col(src).cast(pl.Utf8, strict=False).alias(target))
+                        try: exprs.append(pl.col(src).str.to_time(strict=False).alias("Hora"))
+                        except: exprs.append(pl.col(src).alias("Hora"))
                 else:
                     exprs.append(pl.lit(None).alias(target))
 
-            df_proc = df_raw.select(exprs)
-            missing = [c for c in required_cols if c not in df_proc.columns]
-            if missing: df_proc = df_proc.with_columns([pl.lit(None).alias(c) for c in missing])
-            
-            dfs.append(df_proc.select(required_cols))
-        except: continue
+        for target in ["Depósito", "SKU", "Pedido", "Caixa", "Quantidade", "Rota/Destino"]:
+            src = mapping.get(target)
+            if src and src in df_raw.columns:
+                if target == "Quantidade":
+                    exprs.append(pl.col(src).cast(pl.Utf8).str.replace(",", ".").cast(pl.Float64, strict=False).alias(target))
+                else:
+                    exprs.append(pl.col(src).cast(pl.Utf8, strict=False).alias(target))
+            else:
+                exprs.append(pl.lit(None).alias(target))
+
+        df_proc = df_raw.select(exprs)
+        missing = [c for c in required_cols if c not in df_proc.columns]
+        if missing: df_proc = df_proc.with_columns([pl.lit(None).alias(c) for c in missing])
         
+        return df_proc.select(required_cols)
+    except:
+        return None
+
+def process_etl_batch(files, mapping, split_dt, dt_source):
+    """ETL OTIMIZADO: Usa ThreadPool para ler arquivos em paralelo."""
+    dfs = []
+    required_cols = ["Depósito", "SKU", "Pedido", "Caixa", "Data", "Hora", "Quantidade", "Rota/Destino"]
+    
+    prog_bar = st.progress(0, text="Iniciando processamento paralelo...")
+    total = len(files)
+    
+    # Processamento Paralelo (Multi-threading)
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        # Submete todas as tarefas
+        futures = {executor.submit(process_single_file, f, mapping, split_dt, dt_source, required_cols): f for f in files}
+        
+        for i, future in enumerate(concurrent.futures.as_completed(futures)):
+            result = future.result()
+            if result is not None:
+                dfs.append(result)
+            # Atualiza barra de progresso
+            prog_bar.progress((i + 1) / total, text=f"Processado {i+1}/{total} arquivos")
+
     prog_bar.empty()
     if not dfs: return pl.DataFrame()
     return pl.concat(dfs, how="vertical")
@@ -456,6 +475,7 @@ def main():
         st.markdown("###")
         if files_mov:
             if st.button("🚀 Processar Dados", type="primary"):
+                # Otimização aqui (Multithreading)
                 main_df = process_etl_batch(files_mov, st.session_state.mapping, st.session_state.split_dt, st.session_state.dt_source)
                 if not main_df.is_empty():
                     with st.status("Processando...", expanded=True):
@@ -549,7 +569,7 @@ def main():
         if v_detail.height > 0:
             qtd_linhas = v_detail.height
             
-            # SAFE KPI Calculation
+            # SAFE KPI Calculation (prevents NoneType error)
             qtd_unidades = v_detail["Quantidade"].sum()
             qtd_unidades = qtd_unidades if qtd_unidades is not None else 0
             
@@ -602,26 +622,34 @@ def main():
             
             # 2. HEATMAP FIXO DE 54 SEMANAS (GITHUB STYLE)
             if v_detail.height > 0:
+                # Converte para Pandas para facilitar manipulação de Data/Hora
                 real_data_pdf = (
                     v_detail.group_by("Data")
                     .agg(pl.col("Quantidade").sum().alias("Qtd"))
                     .to_pandas()
                 )
                 
+                # Garante que a coluna 'Data' seja datetime64[ns]
                 real_data_pdf["Data"] = pd.to_datetime(real_data_pdf["Data"])
                 
                 if not real_data_pdf.empty:
                     min_date = real_data_pdf["Data"].min()
+                    
+                    # Cria range de 54 semanas a partir do início dos dados (aprox 1 ano)
                     date_range = pd.date_range(start=min_date, periods=54 * 7, freq='D')
                     
+                    # Cria dataframe esqueleto (todas as datas) e força datetime64[ns]
                     skeleton_df = pd.DataFrame({"Data": date_range})
                     skeleton_df["Data"] = pd.to_datetime(skeleton_df["Data"])
                     
+                    # Join Esqueleto com Dados Reais
                     hm_final = pd.merge(skeleton_df, real_data_pdf, on="Data", how="left").fillna(0)
                     
+                    # Prepara colunas para o Plotly
                     hm_final["YearWeek"] = hm_final["Data"].dt.strftime("%Y-W%U")
                     hm_final["DiaSemana"] = hm_final["Data"].dt.strftime("%a")
                     
+                    # Ordenação para o gráfico (Domingo em baixo ou em cima, aqui vamos padrão EN)
                     fig_hm = px.density_heatmap(
                         hm_final, 
                         x="YearWeek", 
@@ -630,9 +658,9 @@ def main():
                         color_continuous_scale="Greens",
                         title="Intensidade de Atividade (54 Semanas)",
                         category_orders={
-                            "DiaSemana": ["Sun", "Sat", "Fri", "Thu", "Wed", "Tue", "Mon"]
+                            "DiaSemana": ["Sun", "Sat", "Fri", "Thu", "Wed", "Tue", "Mon"] # Segue ordem visual do Github
                         },
-                        range_color=[0, hm_final["Qtd"].max()],
+                        range_color=[0, hm_final["Qtd"].max()], # Fixa escala para não distorcer com zeros
                         template="plotly_white" # Força modo claro
                     )
                     
