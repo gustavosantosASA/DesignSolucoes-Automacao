@@ -5,11 +5,14 @@ import plotly.express as px
 import plotly.graph_objects as go
 import io
 import time
-from datetime import timedelta
 import concurrent.futures
+import warnings
+
+# Silencia avisos não críticos do Polars/Excel para limpar o log
+warnings.filterwarnings("ignore", message=".*Could not determine dtype.*")
 
 # ==============================================================================
-# 1. SETUP & CSS (FORÇANDO TOTALMENTE O LIGHT MODE)
+# 1. SETUP & CSS (FORÇANDO MODO CLARO)
 # ==============================================================================
 
 def setup_page():
@@ -20,7 +23,6 @@ def setup_page():
         initial_sidebar_state="collapsed"
     )
 
-    # CSS REFORÇADO PARA FORÇAR MODO CLARO
     st.markdown("""
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -33,6 +35,7 @@ def setup_page():
             --font: "Inter", sans-serif;
         }
 
+        /* Aplicação Geral */
         .stApp {
             background-color: #f8fafc !important;
             color: #334155 !important;
@@ -41,6 +44,7 @@ def setup_page():
         [data-testid="stSidebar"] { display: none; }
         #MainMenu, header, footer { visibility: hidden; }
         
+        /* Textos */
         h1, h2, h3, h4, h5, h6, p, div, span, label, li, .stMarkdown {
             color: #334155 !important;
         }
@@ -49,7 +53,7 @@ def setup_page():
             color: #1e293b !important;
         }
 
-        /* --- ESTILO DO CABEÇALHO DA ETAPA (CARD) --- */
+        /* Cards */
         .step-header-card {
             background-color: #ffffff; 
             border-radius: 10px; 
@@ -73,7 +77,7 @@ def setup_page():
             line-height: 1.2;
         }
         
-        /* --- RESUMO DE ETAPA CONCLUÍDA (VERDE) --- */
+        /* Resumo */
         .step-summary {
             background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px;
             padding: 12px 20px; margin-bottom: 15px; display: flex; align-items: center; gap: 15px;
@@ -85,7 +89,7 @@ def setup_page():
         }
         .step-text { color: #166534 !important; font-weight: 600; font-size: 0.95rem; margin: 0; }
         
-        /* --- KPI CARDS --- */
+        /* KPI Cards */
         .kpi-card {
             background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;
             padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); text-align: left;
@@ -97,19 +101,15 @@ def setup_page():
         .kpi-label { font-size: 0.75rem; color: #64748b !important; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
         .kpi-sub { font-size: 0.7rem; color: #94a3b8 !important; margin-top: 2px; }
 
-        /* --- COMPONENTES NATIVOS (FORÇAR BRANCO) --- */
+        /* Componentes Nativos (White Force) */
         .stTextInput input, .stSelectbox div[data-baseweb="select"] > div, .stMultiSelect div[data-baseweb="select"] > div {
             background-color: #ffffff !important;
             color: #334155 !important;
             border-color: #e2e8f0 !important;
         }
         
-        ul[data-baseweb="menu"] {
-            background-color: #ffffff !important;
-        }
-        ul[data-baseweb="menu"] li {
-            color: #334155 !important;
-        }
+        ul[data-baseweb="menu"] { background-color: #ffffff !important; }
+        ul[data-baseweb="menu"] li { color: #334155 !important; }
         
         [data-testid="stFileUploadDropzone"] {
             background-color: #ffffff !important;
@@ -119,9 +119,7 @@ def setup_page():
             color: #64748b !important;
         }
 
-        [data-testid="stDataFrame"] {
-            background-color: #ffffff !important;
-        }
+        [data-testid="stDataFrame"] { background-color: #ffffff !important; }
 
         div.stButton > button { 
             border-radius: 8px; 
@@ -142,7 +140,7 @@ def setup_page():
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. MOTOR DE DADOS OTIMIZADO
+# 2. MOTOR DE DADOS OTIMIZADO (High Performance)
 # ==============================================================================
 
 @st.cache_data(show_spinner=False)
@@ -152,10 +150,8 @@ def load_sample(file) -> pl.DataFrame:
         if file.name.endswith('.csv'): 
             return pl.read_csv(file, n_rows=100, ignore_errors=True, try_parse_dates=True)
         else: 
-            try:
-                return pl.read_excel(file, engine="calamine")
-            except:
-                return pl.read_excel(file) 
+            try: return pl.read_excel(file, engine="calamine")
+            except: return pl.read_excel(file) 
     except: return pl.DataFrame()
 
 def load_full_safe(file) -> pl.DataFrame:
@@ -168,10 +164,8 @@ def load_full_safe(file) -> pl.DataFrame:
                 # Tenta usar calamine (instale: pip install fastexcel)
                 return pl.read_excel(file, engine="calamine")
             except:
-                try:
-                    return pl.read_excel(file) # Fallback padrão
+                try: return pl.read_excel(file) # Fallback padrão
                 except:
-                    # Fallback Pandas se Polars falhar na estrutura
                     file.seek(0)
                     return pl.from_pandas(pd.read_excel(file))
     except: return pl.DataFrame()
@@ -245,7 +239,6 @@ def process_etl_batch(files, mapping, split_dt, dt_source):
             result = future.result()
             if result is not None:
                 dfs.append(result)
-            # Atualiza barra de progresso
             prog_bar.progress((i + 1) / total, text=f"Processado {i+1}/{total} arquivos")
 
     prog_bar.empty()
@@ -255,7 +248,6 @@ def process_etl_batch(files, mapping, split_dt, dt_source):
 def enrich_and_calculate_stats(main_df, dim_sku_file, key_sku, desc_sku, dim_dep_file, key_dep, desc_dep):
     res = main_df
     
-    # 1. Enriquecimento
     if dim_sku_file and key_sku:
         d_sku = load_dim_full(dim_sku_file)
         if not d_sku.is_empty() and key_sku in d_sku.columns:
@@ -272,7 +264,6 @@ def enrich_and_calculate_stats(main_df, dim_sku_file, key_sku, desc_sku, dim_dep
             if desc_dep and desc_dep in d_dep.columns: d_dep = d_dep.rename({desc_dep: "DEP_DESC"})
             res = res.join(d_dep, left_on="Depósito", right_on=key_dep, how="left", suffix="_dep_dim")
 
-    # 2. Estatísticas
     daily_agg = (
         res.filter(pl.col("Data").is_not_null())
         .group_by(["Depósito", "SKU", "Data"])
@@ -292,7 +283,6 @@ def enrich_and_calculate_stats(main_df, dim_sku_file, key_sku, desc_sku, dim_dep
         (pl.col("Média") + (pl.col("Desvio") * 3)).alias("Média + 3 Desv"),
     ])
     
-    # 3. Traz Descrições
     if "SKU_DESC" in res.columns:
         desc_s = res.group_by("SKU").agg(pl.col("SKU_DESC").first())
         stats = stats.join(desc_s, on="SKU", how="left")
@@ -301,7 +291,6 @@ def enrich_and_calculate_stats(main_df, dim_sku_file, key_sku, desc_sku, dim_dep
         desc_d = res.group_by("Depósito").agg(pl.col("DEP_DESC").first())
         stats = stats.join(desc_d, on="Depósito", how="left")
 
-    # 4. Padronização Final
     stats = stats.rename({"Depósito": "Código Depósito", "SKU": "Código SKU"})
     
     if "SKU_DESC" in stats.columns: stats = stats.rename({"SKU_DESC": "SKU"})
@@ -340,18 +329,19 @@ def main():
     c_logo, c_title, c_act = st.columns([0.15, 0.65, 0.2], vertical_alignment="bottom")
     
     with c_logo:
-        try: st.image("Aguia Fundo Branco.png", use_container_width=True)
+        try: st.image("Aguia Fundo Branco.png") # Removido param obsoleto
         except: st.markdown("### 🦅")
         
     with c_title:
         st.markdown("""
-            <h3 style='margin: 0; padding-bottom: 35px; font-weight: 600; color: #1e293b !important;'>
+            <h3 style='margin: 0; padding-bottom: 5px; font-weight: 600; color: #1e293b !important;'>
                 Design Soluções | Movimentações Clientes
             </h3>
         """, unsafe_allow_html=True)
         
     with c_act:
-        if st.button("🔄 Novo Projeto", type="secondary"):
+        # st.button ainda não suporta width='stretch' na versão estável, mantendo use_container_width
+        if st.button("🔄 Novo Projeto", type="secondary", use_container_width=True):
             for k in list(st.session_state.keys()): del st.session_state[k]
             st.rerun()
     
@@ -425,7 +415,7 @@ def main():
                     if c.lower() in target.lower(): idx = ix; break
                 curr_map[target] = st.selectbox(f"map_{i}", st.session_state.cols_origem, index=idx, label_visibility="collapsed")
         st.markdown("###")
-        if st.button("Salvar e Avançar", type="primary"):
+        if st.button("Salvar e Avançar", type="primary", use_container_width=True):
             st.session_state.mapping = curr_map
             st.session_state.split_dt = split_dt
             st.session_state.dt_source = dt_source
@@ -474,7 +464,7 @@ def main():
                     d_dep = st.selectbox("Col. Descrição:", ["---"] + df_pre.columns, key="dd")
         st.markdown("###")
         if files_mov:
-            if st.button("🚀 Processar Dados", type="primary"):
+            if st.button("🚀 Processar Dados", type="primary", use_container_width=True):
                 # Otimização aqui (Multithreading)
                 main_df = process_etl_batch(files_mov, st.session_state.mapping, st.session_state.split_dt, st.session_state.dt_source)
                 if not main_df.is_empty():
@@ -541,6 +531,7 @@ def main():
 
         pdf_display = v_stats.drop(["Label_SKU", "Label_Dep"]).to_pandas()
         
+        # Ajuste: width="stretch" conforme logs para st.dataframe
         selection = st.dataframe(
             pdf_display, 
             use_container_width=True, 
@@ -569,7 +560,7 @@ def main():
         if v_detail.height > 0:
             qtd_linhas = v_detail.height
             
-            # SAFE KPI Calculation (prevents NoneType error)
+            # SAFE KPI Calculation
             qtd_unidades = v_detail["Quantidade"].sum()
             qtd_unidades = qtd_unidades if qtd_unidades is not None else 0
             
@@ -649,7 +640,6 @@ def main():
                     hm_final["YearWeek"] = hm_final["Data"].dt.strftime("%Y-W%U")
                     hm_final["DiaSemana"] = hm_final["Data"].dt.strftime("%a")
                     
-                    # Ordenação para o gráfico (Domingo em baixo ou em cima, aqui vamos padrão EN)
                     fig_hm = px.density_heatmap(
                         hm_final, 
                         x="YearWeek", 
@@ -658,10 +648,10 @@ def main():
                         color_continuous_scale="Greens",
                         title="Intensidade de Atividade (54 Semanas)",
                         category_orders={
-                            "DiaSemana": ["Sun", "Sat", "Fri", "Thu", "Wed", "Tue", "Mon"] # Segue ordem visual do Github
+                            "DiaSemana": ["Sun", "Sat", "Fri", "Thu", "Wed", "Tue", "Mon"]
                         },
-                        range_color=[0, hm_final["Qtd"].max()], # Fixa escala para não distorcer com zeros
-                        template="plotly_white" # Força modo claro
+                        range_color=[0, hm_final["Qtd"].max()],
+                        template="plotly_white"
                     )
                     
                     fig_hm.update_layout(
@@ -672,13 +662,13 @@ def main():
                         margin=dict(l=20, r=20, t=40, b=20),
                         xaxis=dict(showgrid=False),
                         yaxis=dict(showgrid=False),
-                        font_color="#334155" # Força fonte escura
+                        font_color="#334155"
                     )
                     fig_hm.update_traces(xgap=3, ygap=3, showscale=True)
                     st.plotly_chart(fig_hm, use_container_width=True)
         
         st.markdown("###")
-        if st.button("Ir para Exportação", type="primary"):
+        if st.button("Ir para Exportação", type="primary", use_container_width=True):
             st.session_state.current_step = 5
             st.rerun()
 
