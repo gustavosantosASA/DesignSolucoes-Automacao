@@ -5,9 +5,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 import io
 import time
+from datetime import timedelta
 
 # ==============================================================================
-# 1. SETUP & CSS
+# 1. SETUP & CSS (FORÇANDO MODO CLARO / LIGHT MODE)
 # ==============================================================================
 
 def setup_page():
@@ -18,17 +19,34 @@ def setup_page():
         initial_sidebar_state="collapsed"
     )
 
+    # CSS com cores HEXADECIMAIS fixas para garantir o visual claro
+    # independente da configuração do usuário.
     st.markdown("""
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         
-        .stApp { background-color: #f8fafc; font-family: 'Inter', sans-serif; color: #334155; }
+        /* Força fundo claro e fonte escura globalmente */
+        .stApp { 
+            background-color: #f8fafc !important; 
+            font-family: 'Inter', sans-serif; 
+            color: #334155 !important; 
+        }
+        
         [data-testid="stSidebar"] { display: none; }
         #MainMenu, header, footer { visibility: hidden; }
         
+        /* Força cor de textos para ignorar modo noturno do Streamlit */
+        h1, h2, h3, h4, h5, h6, p, div, span, label {
+            color: #334155;
+        }
+        
+        .stMarkdown h3 {
+            color: #1e293b !important;
+        }
+
         /* --- ESTILO DO CABEÇALHO DA ETAPA (CARD) --- */
         .step-header-card {
-            background-color: white; 
+            background-color: #ffffff; 
             border-radius: 10px; 
             padding: 15px 20px; 
             box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0.05); 
@@ -46,7 +64,7 @@ def setup_page():
         }
         
         .step-title { 
-            font-size: 1.1rem; font-weight: 600; color: #1e293b; margin: 0; 
+            font-size: 1.1rem; font-weight: 600; color: #1e293b !important; margin: 0; 
             line-height: 1.2;
         }
         
@@ -60,7 +78,7 @@ def setup_page():
             border-radius: 50%; display: flex; align-items: center; justify-content: center;
             font-weight: bold; font-size: 12px;
         }
-        .step-text { color: #166534; font-weight: 600; font-size: 0.95rem; margin: 0; }
+        .step-text { color: #166534 !important; font-weight: 600; font-size: 0.95rem; margin: 0; }
         
         /* --- KPI CARDS --- */
         .kpi-card {
@@ -70,12 +88,17 @@ def setup_page():
             transition: all 0.2s ease;
         }
         .kpi-card:hover { border-color: #3b82f6; transform: translateY(-2px); }
-        .kpi-value { font-size: 1.5rem; font-weight: 700; color: #0f172a; margin: 5px 0; }
-        .kpi-label { font-size: 0.75rem; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-        .kpi-sub { font-size: 0.7rem; color: #94a3b8; margin-top: 2px; }
+        .kpi-value { font-size: 1.5rem; font-weight: 700; color: #0f172a !important; margin: 5px 0; }
+        .kpi-label { font-size: 0.75rem; color: #64748b !important; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .kpi-sub { font-size: 0.7rem; color: #94a3b8 !important; margin-top: 2px; }
 
         /* UI ELEMENTS */
-        div[data-baseweb="select"] > div { border-radius: 8px; }
+        div[data-baseweb="select"] > div { 
+            border-radius: 8px; 
+            background-color: white; 
+            border-color: #e2e8f0;
+            color: #334155;
+        }
         div.stButton > button { border-radius: 8px; font-weight: 600; width: 100%; }
         
         /* Remove padding extra do topo */
@@ -255,11 +278,12 @@ def main():
     c_logo, c_title, c_act = st.columns([0.15, 0.65, 0.2], vertical_alignment="bottom")
     
     with c_logo:
-        st.image("Aguia Fundo Branco.png", use_container_width=True)
+        try: st.image("Aguia Fundo Branco.png", use_container_width=True)
+        except: st.markdown("### 🦅")
         
     with c_title:
         st.markdown("""
-            <h3 style='margin: 0; padding-bottom: 35px; font-weight: 600; color: #1e293b;'>
+            <h3 style='margin: 0; padding-bottom: 5px; font-weight: 600; color: #1e293b !important;'>
                 Design Soluções | Movimentações Clientes
             </h3>
         """, unsafe_allow_html=True)
@@ -531,34 +555,60 @@ def main():
             )
             st.plotly_chart(fig_trend, use_container_width=True)
             
-            # 2. HEATMAP "GITHUB STYLE"
-            hm_data = (
-                v_detail.filter(pl.col("Data").is_not_null())
-                .group_by("Data")
-                .agg(pl.col("Quantidade").sum().alias("Qtd"))
-                .sort("Data")
-                .with_columns([
-                    pl.col("Data").dt.strftime("%Y-W%U").alias("YearWeek"),
-                    pl.col("Data").dt.strftime("%a").alias("DiaSemana")
-                ])
-                .to_pandas()
-            )
-            
-            fig_hm = px.density_heatmap(
-                hm_data, x="YearWeek", y="DiaSemana", z="Qtd",
-                color_continuous_scale="Greens",
-                title="Intensidade de Atividade (Semanal)",
-                category_orders={
-                    "DiaSemana": ["Sun", "Sat", "Fri", "Thu", "Wed", "Tue", "Mon"]
-                }
-            )
-            fig_hm.update_layout(
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                xaxis_title="Semana", yaxis_title=None,
-                margin=dict(l=20, r=20, t=40, b=20)
-            )
-            fig_hm.update_traces(xgap=3, ygap=3)
-            st.plotly_chart(fig_hm, use_container_width=True)
+            # 2. HEATMAP FIXO DE 54 SEMANAS (GITHUB STYLE)
+            if v_detail.height > 0:
+                # Converte para Pandas para facilitar manipulação de Data/Hora
+                real_data_pdf = (
+                    v_detail.group_by("Data")
+                    .agg(pl.col("Quantidade").sum().alias("Qtd"))
+                    .to_pandas()
+                )
+                
+                # Garante que a coluna 'Data' seja datetime64[ns]
+                real_data_pdf["Data"] = pd.to_datetime(real_data_pdf["Data"])
+                
+                if not real_data_pdf.empty:
+                    min_date = real_data_pdf["Data"].min()
+                    
+                    # Cria range de 54 semanas a partir do início dos dados (aprox 1 ano)
+                    date_range = pd.date_range(start=min_date, periods=54 * 7, freq='D')
+                    
+                    # Cria dataframe esqueleto (todas as datas) e força datetime64[ns]
+                    skeleton_df = pd.DataFrame({"Data": date_range})
+                    skeleton_df["Data"] = pd.to_datetime(skeleton_df["Data"])
+                    
+                    # Join Esqueleto com Dados Reais
+                    hm_final = pd.merge(skeleton_df, real_data_pdf, on="Data", how="left").fillna(0)
+                    
+                    # Prepara colunas para o Plotly
+                    hm_final["YearWeek"] = hm_final["Data"].dt.strftime("%Y-W%U")
+                    hm_final["DiaSemana"] = hm_final["Data"].dt.strftime("%a")
+                    
+                    # Ordenação para o gráfico (Domingo em baixo ou em cima, aqui vamos padrão EN)
+                    fig_hm = px.density_heatmap(
+                        hm_final, 
+                        x="YearWeek", 
+                        y="DiaSemana", 
+                        z="Qtd",
+                        color_continuous_scale="Greens",
+                        title="Intensidade de Atividade (54 Semanas)",
+                        category_orders={
+                            "DiaSemana": ["Sun", "Sat", "Fri", "Thu", "Wed", "Tue", "Mon"] # Segue ordem visual do Github
+                        },
+                        range_color=[0, hm_final["Qtd"].max()] # Fixa escala para não distorcer com zeros
+                    )
+                    
+                    fig_hm.update_layout(
+                        paper_bgcolor='rgba(0,0,0,0)', 
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        xaxis_title="Semana", 
+                        yaxis_title=None,
+                        margin=dict(l=20, r=20, t=40, b=20),
+                        xaxis=dict(showgrid=False),
+                        yaxis=dict(showgrid=False)
+                    )
+                    fig_hm.update_traces(xgap=3, ygap=3, showscale=True)
+                    st.plotly_chart(fig_hm, use_container_width=True)
         
         st.markdown("###")
         if st.button("Ir para Exportação", type="primary"):

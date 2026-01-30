@@ -33,8 +33,3 @@ A aplicação guia o usuário através de um fluxo de trabalho em 5 etapas ("Wiz
 
 ### Pré-requisitos
 Certifique-se de ter o Python instalado. Recomenda-se o uso de um ambiente virtual.
-
-1. **Clone o repositório:**
-   ```bash
-   git clone [https://github.com/SEU-USUARIO/design-solucoes-analytics.git](https://github.com/SEU-USUARIO/design-solucoes-analytics.git)
-   cd design-solucoes-analytics
