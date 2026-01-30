@@ -5,11 +5,13 @@ import plotly.express as px
 import plotly.graph_objects as go
 import io
 import time
-import concurrent.futures
 import warnings
+import os
+import gc  # Importante para limpar memória RAM
 
-# Silencia avisos não críticos do Polars/Excel para limpar o log
-warnings.filterwarnings("ignore", message=".*Could not determine dtype.*")
+# Silencia avisos técnicos
+warnings.filterwarnings("ignore")
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 # ==============================================================================
 # 1. SETUP & CSS (FORÇANDO MODO CLARO)
@@ -35,7 +37,6 @@ def setup_page():
             --font: "Inter", sans-serif;
         }
 
-        /* Aplicação Geral */
         .stApp {
             background-color: #f8fafc !important;
             color: #334155 !important;
@@ -44,7 +45,6 @@ def setup_page():
         [data-testid="stSidebar"] { display: none; }
         #MainMenu, header, footer { visibility: hidden; }
         
-        /* Textos */
         h1, h2, h3, h4, h5, h6, p, div, span, label, li, .stMarkdown {
             color: #334155 !important;
         }
@@ -53,7 +53,6 @@ def setup_page():
             color: #1e293b !important;
         }
 
-        /* Cards */
         .step-header-card {
             background-color: #ffffff; 
             border-radius: 10px; 
@@ -77,7 +76,6 @@ def setup_page():
             line-height: 1.2;
         }
         
-        /* Resumo */
         .step-summary {
             background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px;
             padding: 12px 20px; margin-bottom: 15px; display: flex; align-items: center; gap: 15px;
@@ -89,7 +87,6 @@ def setup_page():
         }
         .step-text { color: #166534 !important; font-weight: 600; font-size: 0.95rem; margin: 0; }
         
-        /* KPI Cards */
         .kpi-card {
             background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;
             padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); text-align: left;
@@ -101,7 +98,6 @@ def setup_page():
         .kpi-label { font-size: 0.75rem; color: #64748b !important; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
         .kpi-sub { font-size: 0.7rem; color: #94a3b8 !important; margin-top: 2px; }
 
-        /* Componentes Nativos (White Force) */
         .stTextInput input, .stSelectbox div[data-baseweb="select"] > div, .stMultiSelect div[data-baseweb="select"] > div {
             background-color: #ffffff !important;
             color: #334155 !important;
@@ -140,13 +136,12 @@ def setup_page():
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. MOTOR DE DADOS OTIMIZADO (High Performance)
+# 2. MOTOR DE DADOS OTIMIZADO (SEQUENCIAL & ROBUSTO)
 # ==============================================================================
 
 @st.cache_data(show_spinner=False)
 def load_sample(file) -> pl.DataFrame:
     try:
-        # Usa 'calamine' para Excel se disponível (muito mais rápido)
         if file.name.endswith('.csv'): 
             return pl.read_csv(file, n_rows=100, ignore_errors=True, try_parse_dates=True)
         else: 
@@ -155,99 +150,142 @@ def load_sample(file) -> pl.DataFrame:
     except: return pl.DataFrame()
 
 def load_full_safe(file) -> pl.DataFrame:
-    """Carregamento OTIMIZADO: Usa engine 'calamine' para Excel (Rust-based)."""
+    """
+    Tenta carregar o arquivo usando engine rápida (calamine).
+    Se falhar, usa engine padrão.
+    """
     try:
         if file.name.endswith('.csv'):
-            return pl.read_csv(file, ignore_errors=True, try_parse_dates=True, infer_schema_length=0)
+            # CSV: Lê tudo como texto inicialmente para evitar erros de tipo, depois convertemos
+            return pl.read_csv(file, ignore_errors=True, infer_schema_length=0)
         else:
             try:
-                # Tenta usar calamine (instale: pip install fastexcel)
+                # Engine Calamine (Rust) - Muito rápida
                 return pl.read_excel(file, engine="calamine")
             except:
-                try: return pl.read_excel(file) # Fallback padrão
+                try:
+                    # Fallback Engine Padrão
+                    return pl.read_excel(file) 
                 except:
+                    # Fallback Pandas (Lento mas seguro)
                     file.seek(0)
                     return pl.from_pandas(pd.read_excel(file))
-    except: return pl.DataFrame()
+    except Exception as e:
+        st.warning(f"Erro ao ler arquivo {file.name}: {e}")
+        return pl.DataFrame()
 
 def load_dim_full(file) -> pl.DataFrame:
     try:
         df = load_full_safe(file)
         if not df.is_empty():
+            # Converte tudo para string para garantir joins perfeitos
             return df.select([pl.col(c).cast(pl.Utf8) for c in df.columns])
         return df
     except: return pl.DataFrame()
 
-def process_single_file(file, mapping, split_dt, dt_source, required_cols):
-    """Função auxiliar para processamento paralelo."""
-    df_raw = load_full_safe(file)
-    if df_raw.is_empty(): return None
-    
-    try:
-        exprs = []
-        if split_dt and dt_source in df_raw.columns:
-            try:
-                tc = pl.col(dt_source).str.to_datetime(strict=False)
-                exprs.extend([tc.dt.date().alias("Data"), tc.dt.time().alias("Hora")])
-            except:
-                exprs.extend([pl.col(dt_source).alias("Data"), pl.lit(None).alias("Hora")])
-        else:
-            for target in ["Data", "Hora"]:
-                src = mapping.get(target)
-                if src and src in df_raw.columns:
-                    if target == "Data":
-                        try: exprs.append(pl.col(src).str.to_datetime(strict=False).dt.date().alias("Data"))
-                        except: exprs.append(pl.col(src).alias("Data"))
-                    else:
-                        try: exprs.append(pl.col(src).str.to_time(strict=False).alias("Hora"))
-                        except: exprs.append(pl.col(src).alias("Hora"))
-                else:
-                    exprs.append(pl.lit(None).alias(target))
-
-        for target in ["Depósito", "SKU", "Pedido", "Caixa", "Quantidade", "Rota/Destino"]:
-            src = mapping.get(target)
-            if src and src in df_raw.columns:
-                if target == "Quantidade":
-                    exprs.append(pl.col(src).cast(pl.Utf8).str.replace(",", ".").cast(pl.Float64, strict=False).alias(target))
-                else:
-                    exprs.append(pl.col(src).cast(pl.Utf8, strict=False).alias(target))
-            else:
-                exprs.append(pl.lit(None).alias(target))
-
-        df_proc = df_raw.select(exprs)
-        missing = [c for c in required_cols if c not in df_proc.columns]
-        if missing: df_proc = df_proc.with_columns([pl.lit(None).alias(c) for c in missing])
-        
-        return df_proc.select(required_cols)
-    except:
-        return None
-
 def process_etl_batch(files, mapping, split_dt, dt_source):
-    """ETL OTIMIZADO: Usa ThreadPool para ler arquivos em paralelo."""
+    """
+    Processamento SEQUENCIAL Otimizado para Cloud.
+    Lê um arquivo, processa, salva e LIMPA a memória antes do próximo.
+    """
     dfs = []
     required_cols = ["Depósito", "SKU", "Pedido", "Caixa", "Data", "Hora", "Quantidade", "Rota/Destino"]
     
-    prog_bar = st.progress(0, text="Iniciando processamento paralelo...")
+    prog_bar = st.progress(0, text="Iniciando processamento...")
     total = len(files)
     
-    # Processamento Paralelo (Multi-threading)
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        # Submete todas as tarefas
-        futures = {executor.submit(process_single_file, f, mapping, split_dt, dt_source, required_cols): f for f in files}
+    for i, f in enumerate(files):
+        prog_bar.progress((i)/total, text=f"Processando arquivo {i+1} de {total}: {f.name}")
         
-        for i, future in enumerate(concurrent.futures.as_completed(futures)):
-            result = future.result()
-            if result is not None:
-                dfs.append(result)
-            prog_bar.progress((i + 1) / total, text=f"Processado {i+1}/{total} arquivos")
+        # 1. Carregamento
+        df_raw = load_full_safe(f)
+        if df_raw.is_empty(): continue
+        
+        try:
+            exprs = []
+            
+            # 2. Tratamento Data/Hora
+            if split_dt and dt_source in df_raw.columns:
+                # Tenta converter, se falhar, fica null
+                try:
+                    tc = pl.col(dt_source).str.to_datetime(strict=False)
+                    exprs.extend([tc.dt.date().alias("Data"), tc.dt.time().alias("Hora")])
+                except:
+                    # Se não for datetime nativo, pega como string
+                    exprs.extend([pl.col(dt_source).alias("Data"), pl.lit(None).alias("Hora")])
+            else:
+                for target in ["Data", "Hora"]:
+                    src = mapping.get(target)
+                    if src and src in df_raw.columns:
+                        if target == "Data":
+                            try: exprs.append(pl.col(src).str.to_datetime(strict=False).dt.date().alias("Data"))
+                            except: exprs.append(pl.col(src).alias("Data"))
+                        else:
+                            try: exprs.append(pl.col(src).str.to_time(strict=False).alias("Hora"))
+                            except: exprs.append(pl.col(src).alias("Hora"))
+                    else:
+                        exprs.append(pl.lit(None).alias(target))
+
+            # 3. Tratamento Colunas Gerais
+            for target in ["Depósito", "SKU", "Pedido", "Caixa", "Quantidade", "Rota/Destino"]:
+                src = mapping.get(target)
+                if src and src in df_raw.columns:
+                    if target == "Quantidade":
+                        # Limpeza agressiva para números (remove espaços, troca virgula)
+                        # Primeiro converte pra String, limpa, depois pra Float
+                        exprs.append(
+                            pl.col(src).cast(pl.Utf8)
+                            .str.strip_chars()
+                            .str.replace(",", ".")
+                            .cast(pl.Float64, strict=False) # strict=False transforma erros em null (não crasha)
+                            .fill_null(0) # Garante que não fique vazio
+                            .alias(target)
+                        )
+                    else:
+                        # Força tudo para texto
+                        exprs.append(pl.col(src).cast(pl.Utf8, strict=False).fill_null("").alias(target))
+                else:
+                    if target == "Quantidade":
+                        exprs.append(pl.lit(0.0).alias(target))
+                    else:
+                        exprs.append(pl.lit("").alias(target))
+
+            # 4. Seleção e Limpeza
+            df_proc = df_raw.select(exprs)
+            
+            # Garante colunas faltantes
+            missing = [c for c in required_cols if c not in df_proc.columns]
+            if missing: 
+                df_proc = df_proc.with_columns([pl.lit(None).alias(c) for c in missing])
+            
+            # Adiciona à lista
+            dfs.append(df_proc.select(required_cols))
+            
+            # 5. OTIMIZAÇÃO CRÍTICA: Limpeza de Memória
+            del df_raw
+            del df_proc
+            gc.collect() # Força o Python a liberar a RAM usada no arquivo anterior
+            
+        except Exception as e:
+            st.error(f"Erro ao processar estrutura do arquivo {f.name}: {e}")
+            continue
 
     prog_bar.empty()
+    
     if not dfs: return pl.DataFrame()
-    return pl.concat(dfs, how="vertical")
+    
+    # Concatenação final
+    try:
+        final_df = pl.concat(dfs, how="vertical_relaxed") # Relaxed permite pequenas diferenças de tipo se houver
+        return final_df
+    except Exception as e:
+        st.error(f"Erro na consolidação final: {e}")
+        return pl.DataFrame()
 
 def enrich_and_calculate_stats(main_df, dim_sku_file, key_sku, desc_sku, dim_dep_file, key_dep, desc_dep):
     res = main_df
     
+    # 1. Enriquecimento
     if dim_sku_file and key_sku:
         d_sku = load_dim_full(dim_sku_file)
         if not d_sku.is_empty() and key_sku in d_sku.columns:
@@ -264,6 +302,8 @@ def enrich_and_calculate_stats(main_df, dim_sku_file, key_sku, desc_sku, dim_dep
             if desc_dep and desc_dep in d_dep.columns: d_dep = d_dep.rename({desc_dep: "DEP_DESC"})
             res = res.join(d_dep, left_on="Depósito", right_on=key_dep, how="left", suffix="_dep_dim")
 
+    # 2. Estatísticas (Otimizado)
+    # Filtra datas nulas antes de agrupar para economizar memória
     daily_agg = (
         res.filter(pl.col("Data").is_not_null())
         .group_by(["Depósito", "SKU", "Data"])
@@ -283,6 +323,7 @@ def enrich_and_calculate_stats(main_df, dim_sku_file, key_sku, desc_sku, dim_dep
         (pl.col("Média") + (pl.col("Desvio") * 3)).alias("Média + 3 Desv"),
     ])
     
+    # 3. Traz Descrições (Usando first para agilizar)
     if "SKU_DESC" in res.columns:
         desc_s = res.group_by("SKU").agg(pl.col("SKU_DESC").first())
         stats = stats.join(desc_s, on="SKU", how="left")
@@ -291,6 +332,7 @@ def enrich_and_calculate_stats(main_df, dim_sku_file, key_sku, desc_sku, dim_dep
         desc_d = res.group_by("Depósito").agg(pl.col("DEP_DESC").first())
         stats = stats.join(desc_d, on="Depósito", how="left")
 
+    # 4. Padronização Final
     stats = stats.rename({"Depósito": "Código Depósito", "SKU": "Código SKU"})
     
     if "SKU_DESC" in stats.columns: stats = stats.rename({"SKU_DESC": "SKU"})
@@ -325,26 +367,16 @@ def get_bytes(df: pl.DataFrame, fmt: str) -> bytes:
 def main():
     setup_page()
 
-    # --- CABEÇALHO COM LOGOTIPO ---
     c_logo, c_title, c_act = st.columns([0.15, 0.65, 0.2], vertical_alignment="bottom")
-    
     with c_logo:
-        try: st.image("Aguia Fundo Branco.png") # Removido param obsoleto
+        try: st.image("Aguia Fundo Branco.png")
         except: st.markdown("### 🦅")
-        
     with c_title:
-        st.markdown("""
-            <h3 style='margin: 0; padding-bottom: 5px; font-weight: 600; color: #1e293b !important;'>
-                Design Soluções | Movimentações Clientes
-            </h3>
-        """, unsafe_allow_html=True)
-        
+        st.markdown("""<h3 style='margin: 0; padding-bottom: 35px; font-weight: 600; color: #1e293b !important;'>Design Soluções | Movimentações Clientes</h3>""", unsafe_allow_html=True)
     with c_act:
-        # st.button ainda não suporta width='stretch' na versão estável, mantendo use_container_width
         if st.button("🔄 Novo Projeto", type="secondary", use_container_width=True):
             for k in list(st.session_state.keys()): del st.session_state[k]
             st.rerun()
-    
     st.markdown("---")
 
     if 'current_step' not in st.session_state:
@@ -353,25 +385,11 @@ def main():
         st.session_state.split_dt = True
         st.session_state.dt_source = None
 
-    # ==========================================================================
     # ETAPA 1
-    # ==========================================================================
     if st.session_state.current_step > 1:
-        st.markdown("""
-            <div class="step-summary">
-                <div class="step-check">✓</div>
-                <div class="step-text">Etapa 1: Configuração Concluída.</div>
-            </div>
-        """, unsafe_allow_html=True)
-    
+        st.markdown("""<div class="step-summary"><div class="step-check">✓</div><div class="step-text">Etapa 1: Configuração Concluída.</div></div>""", unsafe_allow_html=True)
     if st.session_state.current_step == 1:
-        st.markdown("""
-            <div class="step-header-card">
-                <span class="step-badge">ETAPA 1</span>
-                <h3 class="step-title">Configuração Inicial</h3>
-            </div>
-        """, unsafe_allow_html=True)
-        
+        st.markdown("""<div class="step-header-card"><span class="step-badge">ETAPA 1</span><h3 class="step-title">Configuração Inicial</h3></div>""", unsafe_allow_html=True)
         st.info("Carregue uma amostra para identificar a estrutura dos dados.")
         f_sample = st.file_uploader("Arquivo de Amostra", type=["xlsx", "csv"], label_visibility="collapsed")
         if f_sample:
@@ -380,25 +398,11 @@ def main():
             st.session_state.current_step = 2
             st.rerun()
 
-    # ==========================================================================
     # ETAPA 2
-    # ==========================================================================
     if st.session_state.current_step > 2:
-        st.markdown("""
-            <div class="step-summary">
-                <div class="step-check">✓</div>
-                <div class="step-text">Etapa 2: Mapeamento Definido.</div>
-            </div>
-        """, unsafe_allow_html=True)
-
+        st.markdown("""<div class="step-summary"><div class="step-check">✓</div><div class="step-text">Etapa 2: Mapeamento Definido.</div></div>""", unsafe_allow_html=True)
     if st.session_state.current_step == 2:
-        st.markdown("""
-            <div class="step-header-card">
-                <span class="step-badge">ETAPA 2</span>
-                <h3 class="step-title">Mapeamento de Colunas</h3>
-            </div>
-        """, unsafe_allow_html=True)
-        
+        st.markdown("""<div class="step-header-card"><span class="step-badge">ETAPA 2</span><h3 class="step-title">Mapeamento de Colunas</h3></div>""", unsafe_allow_html=True)
         c_dt1, c_dt2 = st.columns([1, 2])
         with c_dt1: split_dt = st.toggle("Separar Data/Hora?", value=True)
         with c_dt2: dt_source = st.selectbox("Coluna Data/Hora:", ["--- Selecione ---"] + st.session_state.cols_origem) if split_dt else None
@@ -422,25 +426,11 @@ def main():
             st.session_state.current_step = 3
             st.rerun()
 
-    # ==========================================================================
     # ETAPA 3
-    # ==========================================================================
     if st.session_state.current_step > 3:
-        st.markdown("""
-            <div class="step-summary">
-                <div class="step-check">✓</div>
-                <div class="step-text">Etapa 3: Dados Processados e Enriquecidos.</div>
-            </div>
-        """, unsafe_allow_html=True)
-
+        st.markdown("""<div class="step-summary"><div class="step-check">✓</div><div class="step-text">Etapa 3: Dados Processados e Enriquecidos.</div></div>""", unsafe_allow_html=True)
     if st.session_state.current_step == 3:
-        st.markdown("""
-            <div class="step-header-card">
-                <span class="step-badge">ETAPA 3</span>
-                <h3 class="step-title">Processamento em Lote</h3>
-            </div>
-        """, unsafe_allow_html=True)
-        
+        st.markdown("""<div class="step-header-card"><span class="step-badge">ETAPA 3</span><h3 class="step-title">Processamento em Lote</h3></div>""", unsafe_allow_html=True)
         col_main, col_dim = st.columns([1, 1])
         with col_main:
             st.markdown("##### 1. Movimentação (Lote)")
@@ -465,7 +455,6 @@ def main():
         st.markdown("###")
         if files_mov:
             if st.button("🚀 Processar Dados", type="primary", use_container_width=True):
-                # Otimização aqui (Multithreading)
                 main_df = process_etl_batch(files_mov, st.session_state.mapping, st.session_state.split_dt, st.session_state.dt_source)
                 if not main_df.is_empty():
                     with st.status("Processando...", expanded=True):
@@ -476,29 +465,15 @@ def main():
                     st.session_state.current_step = 4
                     st.rerun()
 
-    # ==========================================================================
-    # ETAPA 4: ANÁLISE INTERATIVA
-    # ==========================================================================
+    # ETAPA 4
     if st.session_state.current_step > 4:
-        st.markdown("""
-            <div class="step-summary">
-                <div class="step-check">✓</div>
-                <div class="step-text">Etapa 4: Análise Visual Concluída.</div>
-            </div>
-        """, unsafe_allow_html=True)
-
+        st.markdown("""<div class="step-summary"><div class="step-check">✓</div><div class="step-text">Etapa 4: Análise Visual Concluída.</div></div>""", unsafe_allow_html=True)
     if st.session_state.current_step == 4:
         stats = st.session_state.final_stats.clone()
         detail = st.session_state.detail_df.clone()
 
-        st.markdown("""
-            <div class="step-header-card">
-                <span class="step-badge">ETAPA 4</span>
-                <h3 class="step-title">Dashboard de Análise</h3>
-            </div>
-        """, unsafe_allow_html=True)
+        st.markdown("""<div class="step-header-card"><span class="step-badge">ETAPA 4</span><h3 class="step-title">Dashboard de Análise</h3></div>""", unsafe_allow_html=True)
         
-        # Filtros Globais
         stats = stats.with_columns([
             pl.concat_str([pl.col("Código SKU"), pl.lit(" - "), pl.col("SKU").fill_null("")]).alias("Label_SKU"),
             pl.concat_str([pl.col("Código Depósito"), pl.lit(" - "), pl.col("Depósito").fill_null("")]).alias("Label_Dep")
@@ -514,13 +489,11 @@ def main():
             codes_s = [s.split(" - ")[0] for s in sel_skus]
             v_stats = v_stats.filter(pl.col("Label_SKU").is_in(sel_skus))
             v_detail = v_detail.filter(pl.col("SKU").cast(pl.Utf8).is_in(codes_s))
-            
         if sel_deps:
             codes_d = [d.split(" - ")[0] for d in sel_deps]
             v_stats = v_stats.filter(pl.col("Label_Dep").is_in(sel_deps))
             v_detail = v_detail.filter(pl.col("Depósito").cast(pl.Utf8).is_in(codes_d))
 
-        # --- SELEÇÃO NA TABELA (DRILL DOWN) ---
         st.markdown("###")
         st.markdown("**Selecione uma linha na tabela para filtrar o dashboard:**")
         
@@ -530,8 +503,6 @@ def main():
                 st.rerun()
 
         pdf_display = v_stats.drop(["Label_SKU", "Label_Dep"]).to_pandas()
-        
-        # Ajuste: width="stretch" conforme logs para st.dataframe
         selection = st.dataframe(
             pdf_display, 
             use_container_width=True, 
@@ -546,38 +517,23 @@ def main():
             row_data = pdf_display.iloc[idx]
             sel_sku_code = str(row_data["Código SKU"])
             sel_dep_code = str(row_data["Código Depósito"])
-            
             st.session_state.selected_row = f"{sel_sku_code} | {sel_dep_code}"
-            
-            v_detail = v_detail.filter(
-                (pl.col("SKU").cast(pl.Utf8) == sel_sku_code) & 
-                (pl.col("Depósito").cast(pl.Utf8) == sel_dep_code)
-            )
+            v_detail = v_detail.filter((pl.col("SKU").cast(pl.Utf8) == sel_sku_code) & (pl.col("Depósito").cast(pl.Utf8) == sel_dep_code))
             st.info(f"🔎 Filtrando dashboard para SKU: {sel_sku_code} no Depósito: {sel_dep_code}")
 
-        # --- BIG NUMBERS (KPIs) ---
         st.markdown("###")
         if v_detail.height > 0:
             qtd_linhas = v_detail.height
-            
-            # SAFE KPI Calculation
-            qtd_unidades = v_detail["Quantidade"].sum()
-            qtd_unidades = qtd_unidades if qtd_unidades is not None else 0
-            
+            qtd_unidades = v_detail["Quantidade"].sum() if v_detail["Quantidade"].sum() is not None else 0
             qtd_picking = v_detail["Pedido"].n_unique() if "Pedido" in v_detail.columns else 0
             qtd_skus = v_detail["SKU"].n_unique()
             qtd_deps = v_detail["Depósito"].n_unique()
             
             daily_agg = v_detail.group_by("Data").agg(pl.col("Quantidade").sum()).sort("Data")
             qtd_dias = daily_agg.height
-            
-            avg_day = daily_agg["Quantidade"].mean()
-            avg_day = avg_day if avg_day is not None else 0
-            
-            max_day = daily_agg["Quantidade"].max()
-            max_day = max_day if max_day is not None else 0
+            avg_day = daily_agg["Quantidade"].mean() if qtd_dias > 0 else 0
+            max_day = daily_agg["Quantidade"].max() if qtd_dias > 0 else 0
 
-            # LINHA 1
             k1, k2, k3, k4, k5 = st.columns(5)
             k1.markdown(f"""<div class="kpi-card"><div class="kpi-label">Qtde. de códigos de picking</div><div class="kpi-value">{qtd_picking:,}</div></div>""".replace(",", "."), unsafe_allow_html=True)
             k2.markdown(f"""<div class="kpi-card"><div class="kpi-label">Qtde. de unidades na base</div><div class="kpi-value">{qtd_unidades:,.0f}</div></div>""".replace(",", "."), unsafe_allow_html=True)
@@ -586,109 +542,50 @@ def main():
             k5.markdown(f"""<div class="kpi-card"><div class="kpi-label">Dias de informação</div><div class="kpi-value">{qtd_dias}</div></div>""", unsafe_allow_html=True)
             
             st.markdown("###")
-            # LINHA 2
             kt1, kt2, kt3 = st.columns(3)
             kt1.markdown(f"""<div class="kpi-card"><div class="kpi-label">Depósitos Únicos</div><div class="kpi-value">{qtd_deps}</div><div class="kpi-sub">Locais de Estoque</div></div>""", unsafe_allow_html=True)
             kt2.markdown(f"""<div class="kpi-card"><div class="kpi-label">Média Diária</div><div class="kpi-value">{avg_day:,.0f}</div><div class="kpi-sub">Unidades / Dia</div></div>""".replace(",", "."), unsafe_allow_html=True)
             kt3.markdown(f"""<div class="kpi-card"><div class="kpi-label">Pico Máximo</div><div class="kpi-value">{max_day:,.0f}</div><div class="kpi-sub">Recorde em um dia</div></div>""".replace(",", "."), unsafe_allow_html=True)
 
-        # --- GRÁFICOS ---
         if v_detail.height > 0:
             st.markdown("---")
-            
-            # 1. Gráfico de COLUNAS
             daily_trend = daily_agg.to_pandas()
-            fig_trend = px.bar(
-                daily_trend, x="Data", y="Quantidade",
-                title="Volume Diário de Movimentação",
-                color_discrete_sequence=["#2dd4bf"],
-                template="plotly_white" # Força modo claro
-            )
-            fig_trend.update_layout(
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                xaxis_title=None, yaxis_gridcolor="#e2e8f0",
-                font_color="#334155" # Força fonte escura
-            )
+            fig_trend = px.bar(daily_trend, x="Data", y="Quantidade", title="Volume Diário de Movimentação", color_discrete_sequence=["#2dd4bf"], template="plotly_white")
+            fig_trend.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_title=None, yaxis_gridcolor="#e2e8f0", font_color="#334155")
             st.plotly_chart(fig_trend, use_container_width=True)
             
-            # 2. HEATMAP FIXO DE 54 SEMANAS (GITHUB STYLE)
-            if v_detail.height > 0:
-                # Converte para Pandas para facilitar manipulação de Data/Hora
-                real_data_pdf = (
-                    v_detail.group_by("Data")
-                    .agg(pl.col("Quantidade").sum().alias("Qtd"))
-                    .to_pandas()
+            real_data_pdf = v_detail.group_by("Data").agg(pl.col("Quantidade").sum().alias("Qtd")).to_pandas()
+            real_data_pdf["Data"] = pd.to_datetime(real_data_pdf["Data"])
+            if not real_data_pdf.empty:
+                min_date = real_data_pdf["Data"].min()
+                date_range = pd.date_range(start=min_date, periods=54 * 7, freq='D')
+                skeleton_df = pd.DataFrame({"Data": date_range})
+                skeleton_df["Data"] = pd.to_datetime(skeleton_df["Data"])
+                hm_final = pd.merge(skeleton_df, real_data_pdf, on="Data", how="left").fillna(0)
+                hm_final["YearWeek"] = hm_final["Data"].dt.strftime("%Y-W%U")
+                hm_final["DiaSemana"] = hm_final["Data"].dt.strftime("%a")
+                
+                fig_hm = px.density_heatmap(
+                    hm_final, x="YearWeek", y="DiaSemana", z="Qtd", color_continuous_scale="Greens",
+                    title="Intensidade de Atividade (54 Semanas)", category_orders={"DiaSemana": ["Sun", "Sat", "Fri", "Thu", "Wed", "Tue", "Mon"]},
+                    range_color=[0, hm_final["Qtd"].max()], template="plotly_white"
                 )
-                
-                # Garante que a coluna 'Data' seja datetime64[ns]
-                real_data_pdf["Data"] = pd.to_datetime(real_data_pdf["Data"])
-                
-                if not real_data_pdf.empty:
-                    min_date = real_data_pdf["Data"].min()
-                    
-                    # Cria range de 54 semanas a partir do início dos dados (aprox 1 ano)
-                    date_range = pd.date_range(start=min_date, periods=54 * 7, freq='D')
-                    
-                    # Cria dataframe esqueleto (todas as datas) e força datetime64[ns]
-                    skeleton_df = pd.DataFrame({"Data": date_range})
-                    skeleton_df["Data"] = pd.to_datetime(skeleton_df["Data"])
-                    
-                    # Join Esqueleto com Dados Reais
-                    hm_final = pd.merge(skeleton_df, real_data_pdf, on="Data", how="left").fillna(0)
-                    
-                    # Prepara colunas para o Plotly
-                    hm_final["YearWeek"] = hm_final["Data"].dt.strftime("%Y-W%U")
-                    hm_final["DiaSemana"] = hm_final["Data"].dt.strftime("%a")
-                    
-                    fig_hm = px.density_heatmap(
-                        hm_final, 
-                        x="YearWeek", 
-                        y="DiaSemana", 
-                        z="Qtd",
-                        color_continuous_scale="Greens",
-                        title="Intensidade de Atividade (54 Semanas)",
-                        category_orders={
-                            "DiaSemana": ["Sun", "Sat", "Fri", "Thu", "Wed", "Tue", "Mon"]
-                        },
-                        range_color=[0, hm_final["Qtd"].max()],
-                        template="plotly_white"
-                    )
-                    
-                    fig_hm.update_layout(
-                        paper_bgcolor='rgba(0,0,0,0)', 
-                        plot_bgcolor='rgba(0,0,0,0)',
-                        xaxis_title="Semana", 
-                        yaxis_title=None,
-                        margin=dict(l=20, r=20, t=40, b=20),
-                        xaxis=dict(showgrid=False),
-                        yaxis=dict(showgrid=False),
-                        font_color="#334155"
-                    )
-                    fig_hm.update_traces(xgap=3, ygap=3, showscale=True)
-                    st.plotly_chart(fig_hm, use_container_width=True)
+                fig_hm.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Semana", yaxis_title=None, margin=dict(l=20, r=20, t=40, b=20), xaxis=dict(showgrid=False), yaxis=dict(showgrid=False), font_color="#334155")
+                fig_hm.update_traces(xgap=3, ygap=3, showscale=True)
+                st.plotly_chart(fig_hm, use_container_width=True)
         
         st.markdown("###")
         if st.button("Ir para Exportação", type="primary", use_container_width=True):
             st.session_state.current_step = 5
             st.rerun()
 
-    # ==========================================================================
-    # ETAPA 5: EXPORTAÇÃO
-    # ==========================================================================
+    # ETAPA 5
     if st.session_state.current_step == 5:
         stats_final = st.session_state.final_stats
         cols_to_drop = [c for c in ["Label_SKU", "Label_Dep"] if c in stats_final.columns]
         if cols_to_drop: stats_final = stats_final.drop(cols_to_drop)
-        
-        st.markdown("""
-            <div class="step-header-card">
-                <span class="step-badge">ETAPA 5</span>
-                <h3 class="step-title">Downloads</h3>
-            </div>
-        """, unsafe_allow_html=True)
-        
+        st.markdown("""<div class="step-header-card"><span class="step-badge">ETAPA 5</span><h3 class="step-title">Downloads</h3></div>""", unsafe_allow_html=True)
         st.success("Processo concluído com sucesso.")
-        
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("##### 📄 Tabela Analítica")
@@ -702,7 +599,6 @@ def main():
                     st.session_state.b_det = b_det
             if 'b_det' in st.session_state:
                 st.download_button("📥 Baixar CSV Completo", st.session_state.b_det, "base_completa.csv", "text/csv", use_container_width=True)
-
         st.markdown("---")
         if st.button("⬅️ Voltar para Análise"):
             st.session_state.current_step = 4
