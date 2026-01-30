@@ -229,7 +229,7 @@ def main():
         try: st.image("Aguia Fundo Branco.png")
         except: st.markdown("### 🦅")
     with c_title:
-        st.markdown("""<h3 style='margin: 0; padding-bottom: 5px; font-weight: 600; color: #1e293b !important;'>Design Soluções | Movimentações Clientes</h3>""", unsafe_allow_html=True)
+        st.markdown("""<h3 style='margin: 0; padding-bottom: 35px; font-weight: 600; color: #1e293b !important;'>Design Soluções | Movimentações Clientes</h3>""", unsafe_allow_html=True)
     with c_act:
         if st.button("🔄 Novo Projeto", type="secondary", use_container_width=True):
             for k in list(st.session_state.keys()): del st.session_state[k]
