@@ -36,27 +36,25 @@ def setup_page():
     st.markdown("""
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        :root { --primary-color: #2563eb; --background-color: #f8fafc; --secondary-background-color: #ffffff; --text-color: #334155; }
+        :root { --primary-color: #0f172a; --background-color: #f8fafc; --secondary-background-color: #ffffff; --text-color: #334155; }
         .stApp { background-color: #f8fafc !important; color: #334155 !important; font-family: 'Inter', sans-serif; }
         [data-testid="stSidebar"] { display: none; }
         #MainMenu, header, footer { visibility: hidden; }
         h1, h2, h3, h4, h5, h6, p, div, span, label, li, .stMarkdown { color: #334155 !important; }
-        .stMarkdown h3 { color: #1e293b !important; }
-        .step-header-card { background-color: #ffffff; border-radius: 10px; padding: 15px 20px; box-shadow: 0 2px 4px -1px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; }
-        .step-badge { background-color: #eff6ff; color: #2563eb !important; font-weight: 700; padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; border: 1px solid #bfdbfe; white-space: nowrap; }
+        
+        .step-header-card { background-color: #ffffff; border-radius: 8px; padding: 15px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; }
+        .step-badge { background-color: #f1f5f9; color: #475569 !important; font-weight: 700; padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; border: 1px solid #cbd5e1; white-space: nowrap; }
         .step-title { font-size: 1.1rem; font-weight: 600; color: #1e293b !important; margin: 0; line-height: 1.2; }
-        .step-summary { background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 12px 20px; margin-bottom: 15px; display: flex; align-items: center; gap: 15px; }
-        .step-check { background-color: #16a34a; color: white !important; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; }
-        .kpi-card { background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); text-align: left; height: 100%; display: flex; flex-direction: column; justify-content: center; cursor: help; }
-        .kpi-value { font-size: 1.5rem; font-weight: 700; color: #0f172a !important; margin: 5px 0; }
-        .kpi-label { font-size: 0.75rem; color: #64748b !important; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-        .kpi-sub { font-size: 0.7rem; color: #94a3b8 !important; margin-top: 2px; }
-        .stTextInput input, .stSelectbox div[data-baseweb="select"] > div, .stMultiSelect div[data-baseweb="select"] > div { background-color: #ffffff !important; color: #334155 !important; border-color: #e2e8f0 !important; }
-        ul[data-baseweb="menu"] { background-color: #ffffff !important; }
-        [data-testid="stFileUploadDropzone"] { background-color: #ffffff !important; border-color: #e2e8f0 !important; }
-        [data-testid="stDataFrame"] { background-color: #ffffff !important; }
-        div.stButton > button { border-radius: 8px; font-weight: 600; width: 100%; background-color: #ffffff !important; color: #334155 !important; border: 1px solid #e2e8f0 !important; }
-        div.stButton > button:hover { border-color: #2563eb !important; color: #2563eb !important; background-color: #f8fafc !important; }
+        
+        .kpi-card { background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.03); text-align: left; height: 100%; display: flex; flex-direction: column; justify-content: center; cursor: help; transition: all 0.3s ease; }
+        .kpi-card:hover { border-color: #94a3b8; transform: translateY(-3px); box-shadow: 0 4px 10px rgba(0,0,0,0.06); }
+        .kpi-value { font-size: 1.6rem; font-weight: 700; color: #0f172a !important; margin: 8px 0; letter-spacing: -0.5px; }
+        .kpi-label { font-size: 0.75rem; color: #64748b !important; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; }
+        .kpi-sub { font-size: 0.75rem; color: #94a3b8 !important; margin-top: 2px; font-weight: 500; }
+        
+        .stTextInput input, .stSelectbox div[data-baseweb="select"] > div, .stMultiSelect div[data-baseweb="select"] > div { background-color: #ffffff !important; color: #334155 !important; border-color: #e2e8f0 !important; border-radius: 6px; }
+        div.stButton > button { border-radius: 6px; font-weight: 600; width: 100%; background-color: #ffffff !important; color: #334155 !important; border: 1px solid #cbd5e1 !important; transition: all 0.2s; }
+        div.stButton > button:hover { border-color: #0f172a !important; color: #0f172a !important; background-color: #f8fafc !important; }
         .block-container { padding-top: 2rem; }
         </style>
     """, unsafe_allow_html=True)
@@ -90,7 +88,6 @@ def process_save_chunk(file, idx, mapping, split_dt, dt_source):
     if df_raw.is_empty(): return False
     
     exprs = []
-    # Data/Hora
     if split_dt and dt_source in df_raw.columns:
         try:
             tc = pl.col(dt_source).str.to_datetime(strict=False)
@@ -110,7 +107,6 @@ def process_save_chunk(file, idx, mapping, split_dt, dt_source):
             else:
                 exprs.append(pl.lit(None).alias(target))
 
-    # Colunas Gerais
     target_cols = ["Depósito", "SKU", "Pedido", "Caixa", "Quantidade", "Rota/Destino"]
     for target in target_cols:
         src = mapping.get(target)
@@ -136,7 +132,6 @@ def calculate_stats_table(dim_sku_file, key_sku, desc_sku, dim_dep_file, key_dep
     try: lf = pl.scan_parquet(f"{TEMP_DIR}/*.parquet")
     except: return None
 
-    # Agregação para Tabela de Stats
     daily_agg = lf.filter(pl.col("Data").is_not_null()).group_by(["Depósito", "SKU", "Data"]).agg(pl.col("Quantidade").sum().alias("Qtd_Dia")).collect()
     
     stats = daily_agg.group_by(["Depósito", "SKU"]).agg([
@@ -152,7 +147,6 @@ def calculate_stats_table(dim_sku_file, key_sku, desc_sku, dim_dep_file, key_dep
         (pl.col("Média") + (pl.col("Desvio") * 3)).alias("Média + 3 Desv"),
     ])
 
-    # Join Dimensões
     if dim_sku_file:
         d_sku = read_file_chunk(dim_sku_file).select([pl.col(key_sku).cast(pl.Utf8).alias("K"), pl.col(desc_sku).cast(pl.Utf8).alias("D")])
         stats = stats.join(d_sku, left_on="SKU", right_on="K", how="left").rename({"D": "Descrição"})
@@ -164,7 +158,6 @@ def calculate_stats_table(dim_sku_file, key_sku, desc_sku, dim_dep_file, key_dep
     else: stats = stats.with_columns(pl.lit("-").alias("Nome Depósito"))
 
     stats = stats.rename({"Depósito": "Código Depósito", "Nome Depósito": "Depósito", "SKU": "SKU", "Descrição": "Descrição"})
-    
     cols = ["Código Depósito", "Depósito", "SKU", "Descrição", "Média", "Máximo", "Desvio", "Média + 1 Desv", "Média + 2 Desv", "Média + 3 Desv", "Percentil 95%"]
     for c in cols: 
         if c not in stats.columns: stats = stats.with_columns(pl.lit("-").alias(c))
@@ -172,22 +165,11 @@ def calculate_stats_table(dim_sku_file, key_sku, desc_sku, dim_dep_file, key_dep
     return stats.select(cols)
 
 def get_dashboard_metrics(sel_skus, sel_deps, drill_sku=None, drill_dep=None):
-    """
-    Calcula métricas e dados para gráficos DIRETAMENTE DO DISCO.
-    Não carrega linhas individuais, apenas agregados = Baixa Memória.
-    """
     lf = pl.scan_parquet(f"{TEMP_DIR}/*.parquet")
-    
-    # Aplica filtros globais (Multiselects)
     if sel_skus: lf = lf.filter(pl.col("SKU").cast(pl.Utf8).is_in(sel_skus))
     if sel_deps: lf = lf.filter(pl.col("Depósito").cast(pl.Utf8).is_in(sel_deps))
-    
-    # Aplica Drill Down (Se houver clique na tabela)
-    if drill_sku and drill_dep:
-        lf = lf.filter((pl.col("SKU") == drill_sku) & (pl.col("Depósito") == drill_dep))
+    if drill_sku and drill_dep: lf = lf.filter((pl.col("SKU") == drill_sku) & (pl.col("Depósito") == drill_dep))
 
-    # 1. KPIs Escalares (Otimizado)
-    # count() é rápido. sum() é rápido. n_unique() pode ser pesado, usamos approx se necessário, mas aqui vamos tentar exato.
     kpis = lf.select([
         pl.len().alias("lines"),
         pl.col("Quantidade").sum().alias("vol"),
@@ -195,16 +177,9 @@ def get_dashboard_metrics(sel_skus, sel_deps, drill_sku=None, drill_dep=None):
         pl.col("SKU").n_unique().alias("skus"),
         pl.col("Depósito").n_unique().alias("deps"),
         pl.col("Data").n_unique().alias("days")
-    ]).collect().row(0) # Retorna tupla (lines, vol, pick, skus, deps, days)
+    ]).collect().row(0)
 
-    # 2. Dados Diários para Gráficos (Agrupado = Pequeno na RAM)
-    daily_agg = (
-        lf.filter(pl.col("Data").is_not_null())
-        .group_by("Data")
-        .agg(pl.col("Quantidade").sum())
-        .sort("Data")
-    ).collect()
-
+    daily_agg = (lf.filter(pl.col("Data").is_not_null()).group_by("Data").agg(pl.col("Quantidade").sum()).sort("Data")).collect()
     return kpis, daily_agg
 
 # ==============================================================================
@@ -309,7 +284,7 @@ def main():
                     st.rerun()
                 else: st.error("Erro no cálculo.")
 
-    # ETAPA 4 (DASHBOARD INTELIGENTE)
+    # ETAPA 4 (DASHBOARD)
     if st.session_state.current_step == 4:
         stats = st.session_state.final_stats
         st.markdown("""<div class="step-header-card"><span class="step-badge">ETAPA 4</span><h3 class="step-title">Dashboard de Análise</h3></div>""", unsafe_allow_html=True)
@@ -323,36 +298,28 @@ def main():
         sel_skus = c1.multiselect("Filtrar SKUs", stats["Label_SKU"].unique().sort().to_list())
         sel_deps = c2.multiselect("Filtrar Depósitos", stats["Label_Dep"].unique().sort().to_list())
         
-        # Filtra tabela
         v_stats = stats
         if sel_skus: v_stats = v_stats.filter(pl.col("Label_SKU").is_in(sel_skus))
         if sel_deps: v_stats = v_stats.filter(pl.col("Label_Dep").is_in(sel_deps))
 
-        # Determina contexto (Global ou Drill Down)
         drill_sku, drill_dep = None, None
-        
         if 'selected_row' in st.session_state:
-            if st.button("❌ Limpar Seleção (Voltar ao Global)", type="secondary"):
-                del st.session_state.selected_row
-                st.rerun()
             drill_sku, drill_dep = st.session_state.selected_row.split("|")
 
-        # Filtros códigos puros para passar ao motor
         filter_sku_codes = [s.split(" - ")[0] for s in sel_skus] if sel_skus else None
         filter_dep_codes = [d.split(" - ")[0] for d in sel_deps] if sel_deps else None
 
-        # --- BUSCA DADOS AGREGADOS DO DISCO (Zero RAM Risk) ---
+        # Métricas
         kpi_vals, daily_agg = get_dashboard_metrics(filter_sku_codes, filter_dep_codes, drill_sku, drill_dep)
-        
-        # KPIs
         lines, vol, picks, skus, deps, days = kpi_vals
         avg_day = vol / days if days > 0 else 0
         max_day = daily_agg["Quantidade"].max() if not daily_agg.is_empty() else 0
 
+        # Renderiza KPIs
         def kpi_html(l, v, s, t): return f"""<div class="kpi-card" title="{t}"><div class="kpi-label">{l}</div><div class="kpi-value">{v}</div><div class="kpi-sub">{s}</div></div>"""
         
         k1, k2, k3, k4, k5 = st.columns(5)
-        k1.markdown(kpi_html("Linhas", f"{lines:,}".replace(",", "."), "Total", "Registros filtrados"), unsafe_allow_html=True)
+        k1.markdown(kpi_html("Linhas", f"{lines:,}".replace(",", "."), "Registros", "Total de linhas"), unsafe_allow_html=True)
         k2.markdown(kpi_html("Volume", f"{vol:,.0f}".replace(",", "."), "Unidades", "Soma Quantidade"), unsafe_allow_html=True)
         k3.markdown(kpi_html("Picking", f"{picks:,}".replace(",", "."), "Pedidos", "Pedidos Únicos"), unsafe_allow_html=True)
         k4.markdown(kpi_html("SKUs", f"{skus:,}", "Produtos", "SKUs Distintos"), unsafe_allow_html=True)
@@ -364,15 +331,59 @@ def main():
         kt2.markdown(kpi_html("Média Diária", f"{avg_day:,.0f}".replace(",", "."), "Unid/Dia", "Volume / Dias"), unsafe_allow_html=True)
         kt3.markdown(kpi_html("Pico Máximo", f"{max_day:,.0f}".replace(",", "."), "Recorde", "Maior dia"), unsafe_allow_html=True)
 
+        if 'selected_row' in st.session_state:
+            st.info(f"🔎 Filtrando detalhes para: SKU {drill_sku} | Depósito {drill_dep}")
+            if st.button("❌ Limpar Seleção (Voltar ao Geral)", type="secondary"):
+                del st.session_state.selected_row
+                st.rerun()
+
+        # TABELA (POSICIONADA APÓS OS CARDS E ANTES DOS GRÁFICOS)
+        st.markdown("---")
+        st.subheader("📋 Detalhamento por SKU (Drill-Down)")
+        st.markdown("Selecione uma linha na tabela abaixo para filtrar os gráficos.")
+        
+        pdf_tbl = v_stats.drop(["Label_SKU", "Label_Dep"]).to_pandas()
+        sel = st.dataframe(
+            pdf_tbl, 
+            use_container_width=True, 
+            height=350, 
+            on_select="rerun", 
+            selection_mode="single-row", 
+            column_config={
+                "Média": st.column_config.NumberColumn(format="%.2f"),
+                "Desvio": st.column_config.NumberColumn(format="%.2f"),
+                "Percentil 95%": st.column_config.NumberColumn(format="%.2f"),
+            }
+        )
+        
+        if sel.selection.rows:
+            row = pdf_tbl.iloc[sel.selection.rows[0]]
+            new_sel = f"{row['SKU']}|{row['Código Depósito']}"
+            if 'selected_row' not in st.session_state or st.session_state.selected_row != new_sel:
+                st.session_state.selected_row = new_sel
+                st.rerun()
+
+        # GRÁFICOS
         if not daily_agg.is_empty():
             st.markdown("---")
+            st.subheader("📊 Evolução e Sazonalidade")
             pdf = daily_agg.to_pandas()
-            # Bar Chart
-            fig = px.bar(pdf, x="Data", y="Quantidade", title="Evolução Temporal", template="plotly_white")
-            fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', font_color="#334155")
+            
+            # Gráfico de Barras Clean
+            fig = px.bar(pdf, x="Data", y="Quantidade", template="plotly_white")
+            fig.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)', 
+                plot_bgcolor='rgba(0,0,0,0)', 
+                font_color="#334155",
+                title_text="Volume Diário",
+                xaxis=dict(showgrid=False, title=None),
+                yaxis=dict(showgrid=True, gridcolor="#f1f5f9", title=None),
+                hovermode="x unified"
+            )
+            fig.update_traces(marker_color="#2563eb")
             st.plotly_chart(fig, use_container_width=True)
             
-            # Heatmap
+            # Heatmap "Premium"
             pdf["Data"] = pd.to_datetime(pdf["Data"])
             min_d = pdf["Data"].min()
             dates = pd.date_range(start=min_d, periods=54*7, freq='D')
@@ -381,21 +392,39 @@ def main():
             hm["W"] = hm["Data"].dt.strftime("%Y-W%U")
             hm["D"] = hm["Data"].dt.strftime("%a")
             
-            fig_hm = px.density_heatmap(hm, x="W", y="D", z="Quantidade", color_continuous_scale="Greens", title="Heatmap Sazonalidade", template="plotly_white", category_orders={"D": ["Sun", "Sat", "Fri", "Thu", "Wed", "Tue", "Mon"]})
-            fig_hm.update_layout(paper_bgcolor='rgba(0,0,0,0)', font_color="#334155")
+            # Escala de cores corporativa (Cinza claro -> Azul Petróleo Profundo)
+            custom_colors = [
+                [0.0, "#f1f5f9"],   # Zero/Baixo - Slate 100
+                [0.2, "#cbd5e1"],   # Slate 300
+                [0.4, "#94a3b8"],   # Slate 400
+                [0.6, "#2dd4bf"],   # Teal 400
+                [0.8, "#0d9488"],   # Teal 600
+                [1.0, "#0f766e"]    # Teal 700
+            ]
+
+            fig_hm = px.density_heatmap(
+                hm, x="W", y="D", z="Quantidade", 
+                title="Intensidade Semanal (Heatmap)", 
+                template="plotly_white",
+                color_continuous_scale=custom_colors,
+                category_orders={"D": ["Sun", "Sat", "Fri", "Thu", "Wed", "Tue", "Mon"]}
+            )
+            
+            fig_hm.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font_color="#334155",
+                margin=dict(l=40, r=40, t=60, b=40),
+                xaxis=dict(showgrid=False, title=None, showticklabels=True),
+                yaxis=dict(showgrid=False, title=None),
+                coloraxis_colorbar=dict(title="Vol", thickness=15, len=0.7)
+            )
+            # Cria o efeito de "azulejos" com espaçamento
+            fig_hm.update_traces(xgap=4, ygap=4, hovertemplate="Semana: %{x}<br>Dia: %{y}<br>Vol: %{z}<extra></extra>")
+            
             st.plotly_chart(fig_hm, use_container_width=True)
 
-        # TABELA
         st.markdown("###")
-        st.markdown("**Tabela Analítica (Clique para detalhar):**")
-        pdf_tbl = v_stats.drop(["Label_SKU", "Label_Dep"]).to_pandas()
-        sel = st.dataframe(pdf_tbl, use_container_width=True, height=400, on_select="rerun", selection_mode="single-row", column_config={"Média": st.column_config.NumberColumn(format="%.2f")})
-        
-        if sel.selection.rows:
-            row = pdf_tbl.iloc[sel.selection.rows[0]]
-            st.session_state.selected_row = f"{row['SKU']}|{row['Código Depósito']}"
-            st.rerun()
-
         if st.button("Ir para Exportação", type="primary", use_container_width=True):
             st.session_state.current_step = 5
             st.rerun()
