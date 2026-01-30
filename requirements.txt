@@ -5,3 +5,4 @@ plotly
 xlsxwriter
 fastexcel
 openpyxl
+pyarrow
