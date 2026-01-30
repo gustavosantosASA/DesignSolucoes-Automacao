@@ -16,7 +16,7 @@ warnings.filterwarnings("ignore")
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 # ==============================================================================
-# 1. SETUP & CSS (VISUAL CLEAN/LIGHT)
+# 1. SETUP & CSS
 # ==============================================================================
 def setup_page():
     st.set_page_config(
@@ -44,9 +44,22 @@ def setup_page():
         .step-summary { background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 12px 20px; margin-bottom: 15px; display: flex; align-items: center; gap: 15px; }
         .step-check { background-color: #16a34a; color: white !important; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; }
         
-        .kpi-card { background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); text-align: left; height: 100%; display: flex; flex-direction: column; justify-content: center; }
+        .kpi-card { 
+            background-color: #ffffff; 
+            border: 1px solid #e2e8f0; 
+            border-radius: 12px; 
+            padding: 15px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02); 
+            text-align: left; 
+            height: 100%; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: center;
+            cursor: help;
+        }
         .kpi-value { font-size: 1.5rem; font-weight: 700; color: #0f172a !important; margin: 5px 0; }
         .kpi-label { font-size: 0.75rem; color: #64748b !important; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .kpi-sub { font-size: 0.7rem; color: #94a3b8 !important; margin-top: 2px; }
         
         .stTextInput input, .stSelectbox div[data-baseweb="select"] > div, .stMultiSelect div[data-baseweb="select"] > div { background-color: #ffffff !important; color: #334155 !important; border-color: #e2e8f0 !important; }
         ul[data-baseweb="menu"] { background-color: #ffffff !important; }
@@ -59,24 +72,21 @@ def setup_page():
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. MOTOR DE DADOS ROBUSTO (SEQUENCIAL + SAFE TYPES)
+# 2. MOTOR DE DADOS
 # ==============================================================================
 
 def read_file_chunk(file) -> pl.DataFrame:
-    """Lê arquivo com engine calamine (rápida) ou fallback."""
     try:
         if file.name.endswith('.csv'):
             return pl.read_csv(file, ignore_errors=True, infer_schema_length=0)
         else:
-            try:
-                return pl.read_excel(file, engine="calamine")
+            try: return pl.read_excel(file, engine="calamine")
             except:
                 try: return pl.read_excel(file) 
                 except:
                     file.seek(0)
                     return pl.from_pandas(pd.read_excel(file))
-    except Exception:
-        return pl.DataFrame()
+    except Exception: return pl.DataFrame()
 
 def load_dim_safe(file):
     if not file: return pl.DataFrame()
@@ -86,14 +96,9 @@ def load_dim_safe(file):
     return df
 
 def process_and_clean_single_file(df_raw, mapping, split_dt, dt_source):
-    """
-    Processa um dataframe, garante todas as colunas e tipos corretos.
-    """
     if df_raw.is_empty(): return None
-    
     exprs = []
     
-    # 1. Tratamento de Data/Hora
     if split_dt and dt_source in df_raw.columns:
         try:
             tc = pl.col(dt_source).str.to_datetime(strict=False)
@@ -101,7 +106,6 @@ def process_and_clean_single_file(df_raw, mapping, split_dt, dt_source):
         except:
             exprs.extend([pl.col(dt_source).cast(pl.Utf8).alias("Data"), pl.lit(None).alias("Hora")])
     else:
-        # Se não configurou data, busca no mapeamento
         for target in ["Data", "Hora"]:
             src = mapping.get(target)
             if src and src in df_raw.columns:
@@ -114,33 +118,22 @@ def process_and_clean_single_file(df_raw, mapping, split_dt, dt_source):
             else:
                 exprs.append(pl.lit(None).alias(target))
 
-    # 2. Tratamento das outras colunas
-    # Lista fixa de colunas que OBRIGATORIAMENTE devem existir no final
     target_cols = ["Depósito", "SKU", "Pedido", "Caixa", "Quantidade", "Rota/Destino"]
-    
     for target in target_cols:
         src = mapping.get(target)
         if src and src in df_raw.columns:
             if target == "Quantidade":
-                # Limpeza robusta para números
                 exprs.append(
-                    pl.col(src).cast(pl.Utf8)
-                    .str.replace(",", ".")
-                    .cast(pl.Float64, strict=False)
-                    .fill_null(0.0)
-                    .cast(pl.Float32) 
-                    .alias(target)
+                    pl.col(src).cast(pl.Utf8).str.replace(",", ".").cast(pl.Float64, strict=False).fill_null(0.0).cast(pl.Float32).alias(target)
                 )
             else:
                 exprs.append(pl.col(src).cast(pl.Utf8, strict=False).fill_null("").alias(target))
         else:
-            # Se a coluna não existe no original, cria vazia
             if target == "Quantidade":
                 exprs.append(pl.lit(0.0, dtype=pl.Float32).alias(target))
             else:
                 exprs.append(pl.lit("", dtype=pl.Utf8).alias(target))
 
-    # Executa projeção
     return df_raw.select(exprs)
 
 def load_sample_optimized(file) -> pl.DataFrame:
@@ -154,12 +147,7 @@ def load_sample_optimized(file) -> pl.DataFrame:
 
 def enrich_and_calculate_stats(main_df, dim_sku_file, key_sku, desc_sku, dim_dep_file, key_dep, desc_dep):
     res = main_df
-    
-    # Garante que as colunas de chave sejam strings para o Join
-    res = res.with_columns([
-        pl.col("SKU").cast(pl.Utf8).fill_null(""),
-        pl.col("Depósito").cast(pl.Utf8).fill_null("")
-    ])
+    res = res.with_columns([pl.col("SKU").cast(pl.Utf8).fill_null(""), pl.col("Depósito").cast(pl.Utf8).fill_null("")])
 
     if dim_sku_file and key_sku:
         d_sku = load_dim_safe(dim_sku_file)
@@ -175,14 +163,8 @@ def enrich_and_calculate_stats(main_df, dim_sku_file, key_sku, desc_sku, dim_dep
             if desc_dep and desc_dep in d_dep.columns: d_dep = d_dep.rename({desc_dep: "DEP_DESC"})
             res = res.join(d_dep, left_on="Depósito", right_on=key_dep, how="left", suffix="_dep_dim")
 
-    # Agregação Diária
-    daily_agg = (
-        res.filter(pl.col("Data").is_not_null())
-        .group_by(["Depósito", "SKU", "Data"])
-        .agg(pl.col("Quantidade").sum().alias("Qtd_Dia"))
-    )
+    daily_agg = res.filter(pl.col("Data").is_not_null()).group_by(["Depósito", "SKU", "Data"]).agg(pl.col("Quantidade").sum().alias("Qtd_Dia"))
     
-    # Estatísticas por SKU/Depósito
     stats = daily_agg.group_by(["Depósito", "SKU"]).agg([
         pl.col("Qtd_Dia").mean().alias("Média"),
         pl.col("Qtd_Dia").max().alias("Máximo"),
@@ -196,37 +178,38 @@ def enrich_and_calculate_stats(main_df, dim_sku_file, key_sku, desc_sku, dim_dep
         (pl.col("Média") + (pl.col("Desvio") * 3)).alias("Média + 3 Desv"),
     ])
     
-    # Recupera descrições
     if "SKU_DESC" in res.columns:
         desc_s = res.group_by("SKU").agg(pl.col("SKU_DESC").first())
         stats = stats.join(desc_s, on="SKU", how="left")
-    
+    else:
+        stats = stats.with_columns(pl.lit("-").alias("SKU_DESC"))
+        
     if "DEP_DESC" in res.columns:
         desc_d = res.group_by("Depósito").agg(pl.col("DEP_DESC").first())
         stats = stats.join(desc_d, on="Depósito", how="left")
+    else:
+        stats = stats.with_columns(pl.lit("-").alias("DEP_DESC"))
 
-    # Renomeação final e garantia de colunas
-    stats = stats.rename({"Depósito": "Código Depósito", "SKU": "Código SKU"})
-    
-    if "SKU_DESC" in stats.columns: stats = stats.rename({"SKU_DESC": "SKU"})
-    else: stats = stats.with_columns(pl.lit("").alias("SKU"))
-        
-    if "DEP_DESC" in stats.columns: stats = stats.rename({"DEP_DESC": "Depósito"})
-    else: stats = stats.with_columns(pl.lit("").alias("Depósito"))
+    # RENOMEAÇÃO FINAL
+    stats = stats.rename({
+        "Depósito": "Código Depósito", 
+        "DEP_DESC": "Depósito",
+        "SKU": "SKU", # Mantém SKU como SKU, não Código SKU
+        "SKU_DESC": "Descrição"
+    })
 
     final_cols = [
-        "Código Depósito", "Depósito", 
-        "Código SKU", "SKU", 
+        "Código Depósito", "Depósito", "SKU", "Descrição",
         "Média", "Máximo", "Desvio", 
         "Média + 1 Desv", "Média + 2 Desv", "Média + 3 Desv", 
         "Percentil 95%"
     ]
     
-    # Garante que só as colunas desejadas e extras fiquem
-    all_cols = stats.columns
-    cols_to_keep = [c for c in final_cols if c in all_cols] + [c for c in all_cols if c not in final_cols and c != "Qtd_Dia"]
-    
-    return stats.select(cols_to_keep), res
+    for c in final_cols:
+        if c not in stats.columns:
+            stats = stats.with_columns(pl.lit("-").alias(c))
+
+    return stats.select(final_cols), res
 
 def get_bytes(df: pl.DataFrame, fmt: str) -> bytes:
     b = io.BytesIO()
@@ -331,31 +314,17 @@ def main():
             if st.button("🚀 Processar Dados", type="primary", use_container_width=True):
                 progress_bar = st.progress(0, text="Iniciando motor de dados...")
                 dfs_list = []
-                
-                # --- LOOP SEQUENCIAL (SAFE MEMORY) ---
                 total_files = len(files_mov)
                 for idx, file in enumerate(files_mov):
                     try:
                         progress_bar.progress((idx) / total_files, text=f"Processando: {file.name}")
-                        
-                        # Leitura
                         df_raw = read_file_chunk(file)
-                        
-                        # Processamento
                         df_clean = process_and_clean_single_file(
-                            df_raw, 
-                            st.session_state.mapping, 
-                            st.session_state.split_dt, 
-                            st.session_state.dt_source
+                            df_raw, st.session_state.mapping, st.session_state.split_dt, st.session_state.dt_source
                         )
-                        
-                        if df_clean is not None:
-                            dfs_list.append(df_clean)
-                        
-                        # Limpeza Imediata
+                        if df_clean is not None: dfs_list.append(df_clean)
                         del df_raw
                         gc.collect()
-                        
                     except Exception as e:
                         st.error(f"Erro no arquivo {file.name}: {str(e)}")
                 
@@ -383,9 +352,10 @@ def main():
 
         st.markdown("""<div class="step-header-card"><span class="step-badge">ETAPA 4</span><h3 class="step-title">Dashboard de Análise</h3></div>""", unsafe_allow_html=True)
         
+        # Correção aqui: Uso de "SKU" e "Descrição" conforme novos nomes
         stats = stats.with_columns([
-            pl.concat_str([pl.col("Código SKU"), pl.lit(" - "), pl.col("SKU").fill_null("")]).alias("Label_SKU"),
-            pl.concat_str([pl.col("Código Depósito"), pl.lit(" - "), pl.col("Depósito").fill_null("")]).alias("Label_Dep")
+            pl.concat_str([pl.col("SKU"), pl.lit(" - "), pl.col("Descrição")]).alias("Label_SKU"),
+            pl.concat_str([pl.col("Código Depósito"), pl.lit(" - "), pl.col("Depósito")]).alias("Label_Dep")
         ])
         
         c_f1, c_f2 = st.columns(2)
@@ -403,8 +373,70 @@ def main():
             v_stats = v_stats.filter(pl.col("Label_Dep").is_in(sel_deps))
             v_detail = v_detail.filter(pl.col("Depósito").cast(pl.Utf8).is_in(codes_d))
 
+        if v_detail.height > 0:
+            qtd_linhas = v_detail.height
+            qtd_unidades = v_detail["Quantidade"].sum()
+            qtd_picking = v_detail["Pedido"].n_unique() if "Pedido" in v_detail.columns else 0
+            qtd_skus = v_detail["SKU"].n_unique()
+            qtd_deps = v_detail["Depósito"].n_unique()
+            
+            daily_agg = v_detail.group_by("Data").agg(pl.col("Quantidade").sum()).sort("Data")
+            qtd_dias = daily_agg.height
+            avg_day = daily_agg["Quantidade"].mean() or 0
+            max_day = daily_agg["Quantidade"].max() or 0
+
+            def kpi_html(label, value, sub, tooltip):
+                return f"""
+                <div class="kpi-card" title="{tooltip}">
+                    <div class="kpi-label">{label}</div>
+                    <div class="kpi-value">{value}</div>
+                    <div class="kpi-sub">{sub}</div>
+                </div>
+                """
+
+            k1, k2, k3, k4, k5 = st.columns(5)
+            k1.markdown(kpi_html("Linhas", f"{qtd_linhas:,}".replace(",", "."), "Registros Totais", "Contagem total de linhas."), unsafe_allow_html=True)
+            k2.markdown(kpi_html("Volume (Unid)", f"{qtd_unidades:,.0f}".replace(",", "."), "Soma Total", "Soma absoluta da coluna Quantidade."), unsafe_allow_html=True)
+            k3.markdown(kpi_html("Picking", f"{qtd_picking:,}".replace(",", "."), "Pedidos Únicos", "Contagem distinta de pedidos."), unsafe_allow_html=True)
+            k4.markdown(kpi_html("SKUs", f"{qtd_skus:,}".replace(",", "."), "Produtos Únicos", "Contagem distinta de SKUs."), unsafe_allow_html=True)
+            k5.markdown(kpi_html("Dias", f"{qtd_dias}", "Dias com Movimento", "Dias únicos na base."), unsafe_allow_html=True)
+            
+            st.markdown("###")
+            kt1, kt2, kt3 = st.columns(3)
+            kt1.markdown(kpi_html("Depósitos", f"{qtd_deps}", "Locais Únicos", "Contagem distinta de Depósitos."), unsafe_allow_html=True)
+            kt2.markdown(kpi_html("Média Diária", f"{avg_day:,.0f}".replace(",", "."), "Unidades / Dia", "Volume Total / Dias com movimento."), unsafe_allow_html=True)
+            kt3.markdown(kpi_html("Pico Máximo", f"{max_day:,.0f}".replace(",", "."), "Recorde em 1 Dia", "Maior volume em um único dia."), unsafe_allow_html=True)
+            
+            st.caption("ℹ️ Passe o mouse sobre os cards para ver o significado.")
+
+            st.markdown("---")
+            daily_trend = daily_agg.to_pandas()
+            fig_trend = px.bar(daily_trend, x="Data", y="Quantidade", title="Volume Diário", color_discrete_sequence=["#2dd4bf"], template="plotly_white")
+            fig_trend.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_title=None, font_color="#334155")
+            st.plotly_chart(fig_trend, use_container_width=True)
+            
+            real_data_pdf = daily_agg.to_pandas()
+            real_data_pdf["Data"] = pd.to_datetime(real_data_pdf["Data"])
+            if not real_data_pdf.empty:
+                min_date = real_data_pdf["Data"].min()
+                date_range = pd.date_range(start=min_date, periods=54 * 7, freq='D')
+                skeleton_df = pd.DataFrame({"Data": date_range})
+                hm_final = pd.merge(skeleton_df, real_data_pdf, on="Data", how="left").fillna(0)
+                hm_final["YearWeek"] = hm_final["Data"].dt.strftime("%Y-W%U")
+                hm_final["DiaSemana"] = hm_final["Data"].dt.strftime("%a")
+                
+                fig_hm = px.density_heatmap(
+                    hm_final, x="YearWeek", y="DiaSemana", z="Quantidade", # Corrigido para 'Quantidade' pois vem do daily_agg
+                    color_continuous_scale="Greens", title="Intensidade (54 Semanas)",
+                    category_orders={"DiaSemana": ["Sun", "Sat", "Fri", "Thu", "Wed", "Tue", "Mon"]},
+                    range_color=[0, hm_final["Quantidade"].max()], template="plotly_white"
+                )
+                fig_hm.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_title=None, margin=dict(l=20, r=20, t=40, b=20), font_color="#334155")
+                fig_hm.update_traces(xgap=3, ygap=3, showscale=True)
+                st.plotly_chart(fig_hm, use_container_width=True)
+
         st.markdown("###")
-        st.markdown("**Selecione uma linha na tabela para filtrar o dashboard:**")
+        st.markdown("**Tabela Analítica (Selecione para filtrar):**")
         
         if 'selected_row' in st.session_state:
             if st.button("❌ Limpar Seleção", type="secondary"):
@@ -416,7 +448,10 @@ def main():
             pdf_display, 
             use_container_width=True, 
             height=350,
-            column_config={"Média": st.column_config.NumberColumn(format="%.2f"), "Desvio": st.column_config.NumberColumn(format="%.2f")},
+            column_config={
+                "Média": st.column_config.NumberColumn(format="%.2f"), 
+                "Desvio": st.column_config.NumberColumn(format="%.2f")
+            },
             on_select="rerun",
             selection_mode="single-row"
         )
@@ -424,76 +459,12 @@ def main():
         if selection.selection.rows:
             idx = selection.selection.rows[0]
             row_data = pdf_display.iloc[idx]
-            sel_sku_code = str(row_data["Código SKU"])
+            # Correção para usar os novos nomes de coluna
+            sel_sku_code = str(row_data["SKU"])
             sel_dep_code = str(row_data["Código Depósito"])
             st.session_state.selected_row = f"{sel_sku_code}|{sel_dep_code}"
-            v_detail = v_detail.filter((pl.col("SKU").cast(pl.Utf8) == sel_sku_code) & (pl.col("Depósito").cast(pl.Utf8) == sel_dep_code))
-            st.info(f"🔎 Filtrando por SKU: {sel_sku_code} e Depósito: {sel_dep_code}")
-
-        if v_detail.height > 0:
-            st.markdown("###")
-            # KPIs
-            qtd_linhas = v_detail.height
-            qtd_unidades = v_detail["Quantidade"].sum()
-            qtd_picking = v_detail["Pedido"].n_unique() if "Pedido" in v_detail.columns else 0
-            qtd_skus = v_detail["SKU"].n_unique()
-            qtd_deps = v_detail["Depósito"].n_unique()
             
-            daily_agg = v_detail.group_by("Data").agg(pl.col("Quantidade").sum()).sort("Data")
-            qtd_dias = daily_agg.height
-            avg_day = daily_agg["Quantidade"].mean() if qtd_dias > 0 else 0
-            max_day = daily_agg["Quantidade"].max() if qtd_dias > 0 else 0
-
-            k1, k2, k3, k4, k5 = st.columns(5)
-            k1.markdown(f"""<div class="kpi-card"><div class="kpi-label">Linhas</div><div class="kpi-value">{qtd_linhas:,}</div></div>""".replace(",", "."), unsafe_allow_html=True)
-            k2.markdown(f"""<div class="kpi-card"><div class="kpi-label">Volume (Unid)</div><div class="kpi-value">{qtd_unidades:,.0f}</div></div>""".replace(",", "."), unsafe_allow_html=True)
-            k3.markdown(f"""<div class="kpi-card"><div class="kpi-label">Picking</div><div class="kpi-value">{qtd_picking:,}</div></div>""".replace(",", "."), unsafe_allow_html=True)
-            k4.markdown(f"""<div class="kpi-card"><div class="kpi-label">SKUs</div><div class="kpi-value">{qtd_skus:,}</div></div>""".replace(",", "."), unsafe_allow_html=True)
-            k5.markdown(f"""<div class="kpi-card"><div class="kpi-label">Dias</div><div class="kpi-value">{qtd_dias}</div></div>""", unsafe_allow_html=True)
-            
-            st.markdown("###")
-            kt1, kt2, kt3 = st.columns(3)
-            kt1.markdown(f"""<div class="kpi-card"><div class="kpi-label">Depósitos</div><div class="kpi-value">{qtd_deps}</div></div>""", unsafe_allow_html=True)
-            kt2.markdown(f"""<div class="kpi-card"><div class="kpi-label">Média/Dia</div><div class="kpi-value">{avg_day:,.0f}</div></div>""".replace(",", "."), unsafe_allow_html=True)
-            kt3.markdown(f"""<div class="kpi-card"><div class="kpi-label">Pico Máx</div><div class="kpi-value">{max_day:,.0f}</div></div>""".replace(",", "."), unsafe_allow_html=True)
-
-            # GRÁFICOS
-            st.markdown("---")
-            
-            # 1. Bar Chart
-            daily_trend = daily_agg.to_pandas()
-            fig_trend = px.bar(daily_trend, x="Data", y="Quantidade", title="Volume Diário", color_discrete_sequence=["#2dd4bf"], template="plotly_white")
-            fig_trend.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_title=None, font_color="#334155")
-            st.plotly_chart(fig_trend, use_container_width=True)
-            
-            # 2. Heatmap 54 Semanas (CORRIGIDO PARA KEYERROR)
-            # Agrega explicitamente para o heatmap nomeando como 'Qtd'
-            real_data_pdf = (
-                v_detail.group_by("Data")
-                .agg(pl.col("Quantidade").sum().alias("Qtd")) # Alias explícito resolve o KeyError
-                .to_pandas()
-            )
-            
-            real_data_pdf["Data"] = pd.to_datetime(real_data_pdf["Data"])
-            
-            if not real_data_pdf.empty:
-                min_date = real_data_pdf["Data"].min()
-                date_range = pd.date_range(start=min_date, periods=54 * 7, freq='D')
-                skeleton_df = pd.DataFrame({"Data": date_range})
-                
-                hm_final = pd.merge(skeleton_df, real_data_pdf, on="Data", how="left").fillna(0)
-                hm_final["YearWeek"] = hm_final["Data"].dt.strftime("%Y-W%U")
-                hm_final["DiaSemana"] = hm_final["Data"].dt.strftime("%a")
-                
-                fig_hm = px.density_heatmap(
-                    hm_final, x="YearWeek", y="DiaSemana", z="Qtd", 
-                    color_continuous_scale="Greens", title="Intensidade (54 Semanas)",
-                    category_orders={"DiaSemana": ["Sun", "Sat", "Fri", "Thu", "Wed", "Tue", "Mon"]},
-                    range_color=[0, hm_final["Qtd"].max()], template="plotly_white"
-                )
-                fig_hm.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_title=None, margin=dict(l=20, r=20, t=40, b=20), font_color="#334155")
-                fig_hm.update_traces(xgap=3, ygap=3, showscale=True)
-                st.plotly_chart(fig_hm, use_container_width=True)
+            st.rerun()
 
         st.markdown("###")
         if st.button("Ir para Exportação", type="primary", use_container_width=True):
