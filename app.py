@@ -19,17 +19,43 @@ def setup_page():
         initial_sidebar_state="collapsed"
     )
 
+    # CSS REFORÇADO PARA FORÇAR MODO CLARO
+    # Mesmo com config.toml, isso garante a estilização dos cards personalizados
     st.markdown("""
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         
-        .stApp { background-color: #f8fafc; font-family: 'Inter', sans-serif; color: #334155; }
+        /* Força as variáveis raiz para cores claras */
+        :root {
+            --primary-color: #2563eb;
+            --background-color: #f8fafc;
+            --secondary-background-color: #ffffff;
+            --text-color: #334155;
+            --font: "Inter", sans-serif;
+        }
+
+        /* Aplicação Geral */
+        .stApp {
+            background-color: #f8fafc !important;
+            color: #334155 !important;
+        }
+        
         [data-testid="stSidebar"] { display: none; }
         #MainMenu, header, footer { visibility: hidden; }
         
+        /* Textos - Força cor escura */
+        h1, h2, h3, h4, h5, h6, p, div, span, label, li, .stMarkdown {
+            color: #334155 !important;
+        }
+        
+        /* Títulos Específicos */
+        .stMarkdown h3 {
+            color: #1e293b !important;
+        }
+
         /* --- ESTILO DO CABEÇALHO DA ETAPA (CARD) --- */
         .step-header-card {
-            background-color: white; 
+            background-color: #ffffff; 
             border-radius: 10px; 
             padding: 15px 20px; 
             box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0.05); 
@@ -41,13 +67,13 @@ def setup_page():
         }
         
         .step-badge {
-            background-color: #eff6ff; color: #2563eb; font-weight: 700;
+            background-color: #eff6ff; color: #2563eb !important; font-weight: 700;
             padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; border: 1px solid #bfdbfe;
             white-space: nowrap;
         }
         
         .step-title { 
-            font-size: 1.1rem; font-weight: 600; color: #1e293b; margin: 0; 
+            font-size: 1.1rem; font-weight: 600; color: #1e293b !important; margin: 0; 
             line-height: 1.2;
         }
         
@@ -57,11 +83,11 @@ def setup_page():
             padding: 12px 20px; margin-bottom: 15px; display: flex; align-items: center; gap: 15px;
         }
         .step-check {
-            background-color: #16a34a; color: white; width: 24px; height: 24px;
+            background-color: #16a34a; color: white !important; width: 24px; height: 24px;
             border-radius: 50%; display: flex; align-items: center; justify-content: center;
             font-weight: bold; font-size: 12px;
         }
-        .step-text { color: #166534; font-weight: 600; font-size: 0.95rem; margin: 0; }
+        .step-text { color: #166534 !important; font-weight: 600; font-size: 0.95rem; margin: 0; }
         
         /* --- KPI CARDS --- */
         .kpi-card {
@@ -71,13 +97,52 @@ def setup_page():
             transition: all 0.2s ease;
         }
         .kpi-card:hover { border-color: #3b82f6; transform: translateY(-2px); }
-        .kpi-value { font-size: 1.5rem; font-weight: 700; color: #0f172a; margin: 5px 0; }
-        .kpi-label { font-size: 0.75rem; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-        .kpi-sub { font-size: 0.7rem; color: #94a3b8; margin-top: 2px; }
+        .kpi-value { font-size: 1.5rem; font-weight: 700; color: #0f172a !important; margin: 5px 0; }
+        .kpi-label { font-size: 0.75rem; color: #64748b !important; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .kpi-sub { font-size: 0.7rem; color: #94a3b8 !important; margin-top: 2px; }
 
-        /* UI ELEMENTS */
-        div[data-baseweb="select"] > div { border-radius: 8px; }
-        div.stButton > button { border-radius: 8px; font-weight: 600; width: 100%; }
+        /* --- COMPONENTES NATIVOS (FORÇAR BRANCO) --- */
+        
+        /* Inputs de Texto e Selectbox */
+        .stTextInput input, .stSelectbox div[data-baseweb="select"] > div, .stMultiSelect div[data-baseweb="select"] > div {
+            background-color: #ffffff !important;
+            color: #334155 !important;
+            border-color: #e2e8f0 !important;
+        }
+        
+        /* Dropdowns (Lista de opções) */
+        ul[data-baseweb="menu"] {
+            background-color: #ffffff !important;
+        }
+        ul[data-baseweb="menu"] li {
+            color: #334155 !important;
+        }
+        
+        /* File Uploader */
+        [data-testid="stFileUploadDropzone"] {
+            background-color: #ffffff !important;
+            border-color: #e2e8f0 !important;
+        }
+        
+        /* Dataframes */
+        [data-testid="stDataFrame"] {
+            background-color: #ffffff !important;
+        }
+
+        /* Botões */
+        div.stButton > button { 
+            border-radius: 8px; 
+            font-weight: 600; 
+            width: 100%;
+            background-color: #ffffff !important;
+            color: #334155 !important;
+            border: 1px solid #e2e8f0 !important;
+        }
+        div.stButton > button:hover {
+            border-color: #2563eb !important;
+            color: #2563eb !important;
+            background-color: #f8fafc !important;
+        }
         
         /* Remove padding extra do topo */
         .block-container { padding-top: 2rem; }
@@ -261,7 +326,7 @@ def main():
         
     with c_title:
         st.markdown("""
-            <h3 style='margin: 0; padding-bottom: 35px; font-weight: 600; color: #1e293b;'>
+            <h3 style='margin: 0; padding-bottom: 35px; font-weight: 600; color: #1e293b !important;'>
                 Design Soluções | Movimentações Clientes
             </h3>
         """, unsafe_allow_html=True)
@@ -484,7 +549,7 @@ def main():
         if v_detail.height > 0:
             qtd_linhas = v_detail.height
             
-            # SAFE KPI Calculation (prevents NoneType error)
+            # SAFE KPI Calculation
             qtd_unidades = v_detail["Quantidade"].sum()
             qtd_unidades = qtd_unidades if qtd_unidades is not None else 0
             
@@ -525,47 +590,38 @@ def main():
             fig_trend = px.bar(
                 daily_trend, x="Data", y="Quantidade",
                 title="Volume Diário de Movimentação",
-                color_discrete_sequence=["#2dd4bf"]
+                color_discrete_sequence=["#2dd4bf"],
+                template="plotly_white" # Força modo claro
             )
             fig_trend.update_layout(
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                xaxis_title=None, yaxis_gridcolor="#e2e8f0"
+                xaxis_title=None, yaxis_gridcolor="#e2e8f0",
+                font_color="#334155" # Força fonte escura
             )
             st.plotly_chart(fig_trend, use_container_width=True)
             
-            # 2. HEATMAP FIXO DE 54 SEMANAS (GITHUB STYLE) - CORREÇÃO DE TIPO
-            # ==============================================================================
-            
-            # 2.1. Determinar intervalo de datas fixo ou baseado nos dados
+            # 2. HEATMAP FIXO DE 54 SEMANAS (GITHUB STYLE)
             if v_detail.height > 0:
-                # Converte para Pandas para facilitar manipulação de Data/Hora
                 real_data_pdf = (
                     v_detail.group_by("Data")
                     .agg(pl.col("Quantidade").sum().alias("Qtd"))
                     .to_pandas()
                 )
                 
-                # Garante que a coluna 'Data' seja datetime64[ns]
                 real_data_pdf["Data"] = pd.to_datetime(real_data_pdf["Data"])
                 
                 if not real_data_pdf.empty:
                     min_date = real_data_pdf["Data"].min()
-                    
-                    # Cria range de 54 semanas a partir do início dos dados (aprox 1 ano)
                     date_range = pd.date_range(start=min_date, periods=54 * 7, freq='D')
                     
-                    # Cria dataframe esqueleto (todas as datas) e força datetime64[ns]
                     skeleton_df = pd.DataFrame({"Data": date_range})
                     skeleton_df["Data"] = pd.to_datetime(skeleton_df["Data"])
                     
-                    # Join Esqueleto com Dados Reais
                     hm_final = pd.merge(skeleton_df, real_data_pdf, on="Data", how="left").fillna(0)
                     
-                    # Prepara colunas para o Plotly
                     hm_final["YearWeek"] = hm_final["Data"].dt.strftime("%Y-W%U")
                     hm_final["DiaSemana"] = hm_final["Data"].dt.strftime("%a")
                     
-                    # Ordenação para o gráfico (Domingo em baixo ou em cima, aqui vamos padrão EN)
                     fig_hm = px.density_heatmap(
                         hm_final, 
                         x="YearWeek", 
@@ -574,9 +630,10 @@ def main():
                         color_continuous_scale="Greens",
                         title="Intensidade de Atividade (54 Semanas)",
                         category_orders={
-                            "DiaSemana": ["Sun", "Sat", "Fri", "Thu", "Wed", "Tue", "Mon"] # Segue ordem visual do Github
+                            "DiaSemana": ["Sun", "Sat", "Fri", "Thu", "Wed", "Tue", "Mon"]
                         },
-                        range_color=[0, hm_final["Qtd"].max()] # Fixa escala para não distorcer com zeros
+                        range_color=[0, hm_final["Qtd"].max()],
+                        template="plotly_white" # Força modo claro
                     )
                     
                     fig_hm.update_layout(
@@ -586,11 +643,11 @@ def main():
                         yaxis_title=None,
                         margin=dict(l=20, r=20, t=40, b=20),
                         xaxis=dict(showgrid=False),
-                        yaxis=dict(showgrid=False)
+                        yaxis=dict(showgrid=False),
+                        font_color="#334155" # Força fonte escura
                     )
                     fig_hm.update_traces(xgap=3, ygap=3, showscale=True)
                     st.plotly_chart(fig_hm, use_container_width=True)
-            # ==============================================================================
         
         st.markdown("###")
         if st.button("Ir para Exportação", type="primary"):
