@@ -5,18 +5,20 @@ import plotly.express as px
 import plotly.graph_objects as go
 import io
 import time
-import warnings
+import gc
 import os
-import gc  # Importante para limpar memória RAM
+import warnings
 
-# Silencia avisos técnicos
+# ------------------------------------------------------------------------------
+# CONFIGURAÇÃO INICIAL E OTIMIZAÇÃO DE AMBIENTE
+# ------------------------------------------------------------------------------
+# Silencia avisos que sujam o log mas não impactam execução
 warnings.filterwarnings("ignore")
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 # ==============================================================================
-# 1. SETUP & CSS (FORÇANDO MODO CLARO)
+# 1. CSS E DESIGN (MODO CLARO FORÇADO)
 # ==============================================================================
-
 def setup_page():
     st.set_page_config(
         page_title="Design Soluções | Movimentações Clientes",
@@ -29,339 +31,140 @@ def setup_page():
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         
-        :root {
-            --primary-color: #2563eb;
-            --background-color: #f8fafc;
-            --secondary-background-color: #ffffff;
-            --text-color: #334155;
-            --font: "Inter", sans-serif;
-        }
-
-        .stApp {
-            background-color: #f8fafc !important;
-            color: #334155 !important;
-        }
-        
+        :root { --primary-color: #2563eb; --background-color: #f8fafc; --secondary-background-color: #ffffff; --text-color: #334155; }
+        .stApp { background-color: #f8fafc !important; color: #334155 !important; font-family: 'Inter', sans-serif; }
         [data-testid="stSidebar"] { display: none; }
         #MainMenu, header, footer { visibility: hidden; }
         
-        h1, h2, h3, h4, h5, h6, p, div, span, label, li, .stMarkdown {
-            color: #334155 !important;
-        }
-        
-        .stMarkdown h3 {
-            color: #1e293b !important;
-        }
+        /* Tipografia */
+        h1, h2, h3, h4, h5, h6, p, div, span, label, li, .stMarkdown { color: #334155 !important; }
+        .stMarkdown h3 { color: #1e293b !important; }
 
-        .step-header-card {
-            background-color: #ffffff; 
-            border-radius: 10px; 
-            padding: 15px 20px; 
-            box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0.05); 
-            border: 1px solid #e2e8f0;
-            margin-bottom: 20px;
-            display: flex; 
-            align-items: center; 
-            gap: 12px;
-        }
+        /* Cards */
+        .step-header-card { background-color: #ffffff; border-radius: 10px; padding: 15px 20px; box-shadow: 0 2px 4px -1px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; }
+        .step-badge { background-color: #eff6ff; color: #2563eb !important; font-weight: 700; padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; border: 1px solid #bfdbfe; white-space: nowrap; }
+        .step-title { font-size: 1.1rem; font-weight: 600; color: #1e293b !important; margin: 0; line-height: 1.2; }
+        .step-summary { background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 12px 20px; margin-bottom: 15px; display: flex; align-items: center; gap: 15px; }
+        .step-check { background-color: #16a34a; color: white !important; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; }
         
-        .step-badge {
-            background-color: #eff6ff; color: #2563eb !important; font-weight: 700;
-            padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; border: 1px solid #bfdbfe;
-            white-space: nowrap;
-        }
-        
-        .step-title { 
-            font-size: 1.1rem; font-weight: 600; color: #1e293b !important; margin: 0; 
-            line-height: 1.2;
-        }
-        
-        .step-summary {
-            background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px;
-            padding: 12px 20px; margin-bottom: 15px; display: flex; align-items: center; gap: 15px;
-        }
-        .step-check {
-            background-color: #16a34a; color: white !important; width: 24px; height: 24px;
-            border-radius: 50%; display: flex; align-items: center; justify-content: center;
-            font-weight: bold; font-size: 12px;
-        }
-        .step-text { color: #166534 !important; font-weight: 600; font-size: 0.95rem; margin: 0; }
-        
-        .kpi-card {
-            background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;
-            padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); text-align: left;
-            height: 100%; display: flex; flex-direction: column; justify-content: center;
-            transition: all 0.2s ease;
-        }
+        /* KPI Cards */
+        .kpi-card { background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); text-align: left; height: 100%; display: flex; flex-direction: column; justify-content: center; transition: all 0.2s ease; }
         .kpi-card:hover { border-color: #3b82f6; transform: translateY(-2px); }
         .kpi-value { font-size: 1.5rem; font-weight: 700; color: #0f172a !important; margin: 5px 0; }
         .kpi-label { font-size: 0.75rem; color: #64748b !important; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
         .kpi-sub { font-size: 0.7rem; color: #94a3b8 !important; margin-top: 2px; }
 
-        .stTextInput input, .stSelectbox div[data-baseweb="select"] > div, .stMultiSelect div[data-baseweb="select"] > div {
-            background-color: #ffffff !important;
-            color: #334155 !important;
-            border-color: #e2e8f0 !important;
-        }
-        
+        /* Componentes Nativos */
+        .stTextInput input, .stSelectbox div[data-baseweb="select"] > div, .stMultiSelect div[data-baseweb="select"] > div { background-color: #ffffff !important; color: #334155 !important; border-color: #e2e8f0 !important; }
         ul[data-baseweb="menu"] { background-color: #ffffff !important; }
-        ul[data-baseweb="menu"] li { color: #334155 !important; }
-        
-        [data-testid="stFileUploadDropzone"] {
-            background-color: #ffffff !important;
-            border-color: #e2e8f0 !important;
-        }
-        [data-testid="stFileUploadDropzone"] div, [data-testid="stFileUploadDropzone"] span {
-            color: #64748b !important;
-        }
-
+        [data-testid="stFileUploadDropzone"] { background-color: #ffffff !important; border-color: #e2e8f0 !important; }
         [data-testid="stDataFrame"] { background-color: #ffffff !important; }
-
-        div.stButton > button { 
-            border-radius: 8px; 
-            font-weight: 600; 
-            width: 100%;
-            background-color: #ffffff !important;
-            color: #334155 !important;
-            border: 1px solid #e2e8f0 !important;
-        }
-        div.stButton > button:hover {
-            border-color: #2563eb !important;
-            color: #2563eb !important;
-            background-color: #f8fafc !important;
-        }
-        
+        div.stButton > button { border-radius: 8px; font-weight: 600; width: 100%; background-color: #ffffff !important; color: #334155 !important; border: 1px solid #e2e8f0 !important; }
+        div.stButton > button:hover { border-color: #2563eb !important; color: #2563eb !important; background-color: #f8fafc !important; }
         .block-container { padding-top: 2rem; }
         </style>
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. MOTOR DE DADOS OTIMIZADO (SEQUENCIAL & ROBUSTO)
+# 2. MOTOR DE DADOS OTIMIZADO (BAIXA MEMÓRIA)
 # ==============================================================================
 
-@st.cache_data(show_spinner=False)
-def load_sample(file) -> pl.DataFrame:
+def load_sample_optimized(file) -> pl.DataFrame:
+    """Lê apenas as primeiras linhas para identificar colunas."""
     try:
         if file.name.endswith('.csv'): 
             return pl.read_csv(file, n_rows=100, ignore_errors=True, try_parse_dates=True)
         else: 
+            # Engine calamine é 5x mais rápida que openpyxl
             try: return pl.read_excel(file, engine="calamine")
             except: return pl.read_excel(file) 
     except: return pl.DataFrame()
 
-def load_full_safe(file) -> pl.DataFrame:
-    """
-    Tenta carregar o arquivo usando engine rápida (calamine).
-    Se falhar, usa engine padrão.
-    """
+def read_file_chunk(file) -> pl.DataFrame:
+    """Lê arquivo completo com fallback de engines."""
     try:
         if file.name.endswith('.csv'):
-            # CSV: Lê tudo como texto inicialmente para evitar erros de tipo, depois convertemos
             return pl.read_csv(file, ignore_errors=True, infer_schema_length=0)
         else:
             try:
-                # Engine Calamine (Rust) - Muito rápida
                 return pl.read_excel(file, engine="calamine")
             except:
-                try:
-                    # Fallback Engine Padrão
-                    return pl.read_excel(file) 
+                try: return pl.read_excel(file) # Fallback openpyxl
                 except:
-                    # Fallback Pandas (Lento mas seguro)
+                    # Último recurso: Pandas (lento, mas robusto)
                     file.seek(0)
                     return pl.from_pandas(pd.read_excel(file))
     except Exception as e:
-        st.warning(f"Erro ao ler arquivo {file.name}: {e}")
         return pl.DataFrame()
 
-def load_dim_full(file) -> pl.DataFrame:
-    try:
-        df = load_full_safe(file)
-        if not df.is_empty():
-            # Converte tudo para string para garantir joins perfeitos
-            return df.select([pl.col(c).cast(pl.Utf8) for c in df.columns])
-        return df
-    except: return pl.DataFrame()
-
-def process_etl_batch(files, mapping, split_dt, dt_source):
+def process_and_clean_single_file(df_raw, mapping, split_dt, dt_source, required_cols):
     """
-    Processamento SEQUENCIAL Otimizado para Cloud.
-    Lê um arquivo, processa, salva e LIMPA a memória antes do próximo.
+    Processa um único dataframe em memória:
+    1. Seleciona colunas
+    2. Renomeia
+    3. Converte tipos
+    4. Descarta colunas inúteis imediatamente
     """
-    dfs = []
-    required_cols = ["Depósito", "SKU", "Pedido", "Caixa", "Data", "Hora", "Quantidade", "Rota/Destino"]
+    if df_raw.is_empty(): return None
     
-    prog_bar = st.progress(0, text="Iniciando processamento...")
-    total = len(files)
+    exprs = []
     
-    for i, f in enumerate(files):
-        prog_bar.progress((i)/total, text=f"Processando arquivo {i+1} de {total}: {f.name}")
-        
-        # 1. Carregamento
-        df_raw = load_full_safe(f)
-        if df_raw.is_empty(): continue
-        
+    # 1. Tratamento de Data/Hora
+    if split_dt and dt_source in df_raw.columns:
         try:
-            exprs = []
-            
-            # 2. Tratamento Data/Hora
-            if split_dt and dt_source in df_raw.columns:
-                # Tenta converter, se falhar, fica null
-                try:
-                    tc = pl.col(dt_source).str.to_datetime(strict=False)
-                    exprs.extend([tc.dt.date().alias("Data"), tc.dt.time().alias("Hora")])
-                except:
-                    # Se não for datetime nativo, pega como string
-                    exprs.extend([pl.col(dt_source).alias("Data"), pl.lit(None).alias("Hora")])
-            else:
-                for target in ["Data", "Hora"]:
-                    src = mapping.get(target)
-                    if src and src in df_raw.columns:
-                        if target == "Data":
-                            try: exprs.append(pl.col(src).str.to_datetime(strict=False).dt.date().alias("Data"))
-                            except: exprs.append(pl.col(src).alias("Data"))
-                        else:
-                            try: exprs.append(pl.col(src).str.to_time(strict=False).alias("Hora"))
-                            except: exprs.append(pl.col(src).alias("Hora"))
-                    else:
-                        exprs.append(pl.lit(None).alias(target))
-
-            # 3. Tratamento Colunas Gerais
-            for target in ["Depósito", "SKU", "Pedido", "Caixa", "Quantidade", "Rota/Destino"]:
-                src = mapping.get(target)
-                if src and src in df_raw.columns:
-                    if target == "Quantidade":
-                        # Limpeza agressiva para números (remove espaços, troca virgula)
-                        # Primeiro converte pra String, limpa, depois pra Float
-                        exprs.append(
-                            pl.col(src).cast(pl.Utf8)
-                            .str.strip_chars()
-                            .str.replace(",", ".")
-                            .cast(pl.Float64, strict=False) # strict=False transforma erros em null (não crasha)
-                            .fill_null(0) # Garante que não fique vazio
-                            .alias(target)
-                        )
-                    else:
-                        # Força tudo para texto
-                        exprs.append(pl.col(src).cast(pl.Utf8, strict=False).fill_null("").alias(target))
+            # Tenta conversão rápida
+            tc = pl.col(dt_source).str.to_datetime(strict=False)
+            exprs.extend([tc.dt.date().alias("Data"), tc.dt.time().alias("Hora")])
+        except:
+            # Fallback seguro
+            exprs.extend([pl.col(dt_source).cast(pl.Utf8).alias("Data"), pl.lit(None).alias("Hora")])
+    else:
+        for target in ["Data", "Hora"]:
+            src = mapping.get(target)
+            if src and src in df_raw.columns:
+                if target == "Data":
+                    try: exprs.append(pl.col(src).str.to_datetime(strict=False).dt.date().alias("Data"))
+                    except: exprs.append(pl.col(src).alias("Data"))
                 else:
-                    if target == "Quantidade":
-                        exprs.append(pl.lit(0.0).alias(target))
-                    else:
-                        exprs.append(pl.lit("").alias(target))
+                    try: exprs.append(pl.col(src).str.to_time(strict=False).alias("Hora"))
+                    except: exprs.append(pl.col(src).alias("Hora"))
+            else:
+                exprs.append(pl.lit(None).alias(target))
 
-            # 4. Seleção e Limpeza
-            df_proc = df_raw.select(exprs)
-            
-            # Garante colunas faltantes
-            missing = [c for c in required_cols if c not in df_proc.columns]
-            if missing: 
-                df_proc = df_proc.with_columns([pl.lit(None).alias(c) for c in missing])
-            
-            # Adiciona à lista
-            dfs.append(df_proc.select(required_cols))
-            
-            # 5. OTIMIZAÇÃO CRÍTICA: Limpeza de Memória
-            del df_raw
-            del df_proc
-            gc.collect() # Força o Python a liberar a RAM usada no arquivo anterior
-            
-        except Exception as e:
-            st.error(f"Erro ao processar estrutura do arquivo {f.name}: {e}")
-            continue
+    # 2. Tratamento das outras colunas
+    for target in ["Depósito", "SKU", "Pedido", "Caixa", "Quantidade", "Rota/Destino"]:
+        src = mapping.get(target)
+        if src and src in df_raw.columns:
+            if target == "Quantidade":
+                # Limpeza extrema para garantir numérico
+                exprs.append(
+                    pl.col(src).cast(pl.Utf8)
+                    .str.replace(",", ".")
+                    .cast(pl.Float64, strict=False)
+                    .fill_null(0.0)
+                    .cast(pl.Float32) # Reduz uso de memória pela metade
+                    .alias(target)
+                )
+            else:
+                exprs.append(pl.col(src).cast(pl.Utf8, strict=False).fill_null("").alias(target))
+        else:
+            if target == "Quantidade":
+                exprs.append(pl.lit(0.0, dtype=pl.Float32).alias(target))
+            else:
+                exprs.append(pl.lit("").alias(target))
 
-    prog_bar.empty()
-    
-    if not dfs: return pl.DataFrame()
-    
-    # Concatenação final
-    try:
-        final_df = pl.concat(dfs, how="vertical_relaxed") # Relaxed permite pequenas diferenças de tipo se houver
-        return final_df
-    except Exception as e:
-        st.error(f"Erro na consolidação final: {e}")
-        return pl.DataFrame()
+    # Executa a projeção e limpa o resto
+    return df_raw.select(exprs)
 
-def enrich_and_calculate_stats(main_df, dim_sku_file, key_sku, desc_sku, dim_dep_file, key_dep, desc_dep):
-    res = main_df
-    
-    # 1. Enriquecimento
-    if dim_sku_file and key_sku:
-        d_sku = load_dim_full(dim_sku_file)
-        if not d_sku.is_empty() and key_sku in d_sku.columns:
-            res = res.with_columns(pl.col("SKU").cast(pl.Utf8))
-            d_sku = d_sku.with_columns(pl.col(key_sku).cast(pl.Utf8))
-            if desc_sku and desc_sku in d_sku.columns: d_sku = d_sku.rename({desc_sku: "SKU_DESC"})
-            res = res.join(d_sku, left_on="SKU", right_on=key_sku, how="left", suffix="_sku_dim")
-
-    if dim_dep_file and key_dep:
-        d_dep = load_dim_full(dim_dep_file)
-        if not d_dep.is_empty() and key_dep in d_dep.columns:
-            res = res.with_columns(pl.col("Depósito").cast(pl.Utf8))
-            d_dep = d_dep.with_columns(pl.col(key_dep).cast(pl.Utf8))
-            if desc_dep and desc_dep in d_dep.columns: d_dep = d_dep.rename({desc_dep: "DEP_DESC"})
-            res = res.join(d_dep, left_on="Depósito", right_on=key_dep, how="left", suffix="_dep_dim")
-
-    # 2. Estatísticas (Otimizado)
-    # Filtra datas nulas antes de agrupar para economizar memória
-    daily_agg = (
-        res.filter(pl.col("Data").is_not_null())
-        .group_by(["Depósito", "SKU", "Data"])
-        .agg(pl.col("Quantidade").sum().alias("Qtd_Dia"))
-    )
-    
-    stats = daily_agg.group_by(["Depósito", "SKU"]).agg([
-        pl.col("Qtd_Dia").mean().alias("Média"),
-        pl.col("Qtd_Dia").max().alias("Máximo"),
-        pl.col("Qtd_Dia").std().fill_null(0).alias("Desvio"),
-        pl.col("Qtd_Dia").quantile(0.95).alias("Percentil 95%")
-    ])
-    
-    stats = stats.with_columns([
-        (pl.col("Média") + pl.col("Desvio")).alias("Média + 1 Desv"),
-        (pl.col("Média") + (pl.col("Desvio") * 2)).alias("Média + 2 Desv"),
-        (pl.col("Média") + (pl.col("Desvio") * 3)).alias("Média + 3 Desv"),
-    ])
-    
-    # 3. Traz Descrições (Usando first para agilizar)
-    if "SKU_DESC" in res.columns:
-        desc_s = res.group_by("SKU").agg(pl.col("SKU_DESC").first())
-        stats = stats.join(desc_s, on="SKU", how="left")
-    
-    if "DEP_DESC" in res.columns:
-        desc_d = res.group_by("Depósito").agg(pl.col("DEP_DESC").first())
-        stats = stats.join(desc_d, on="Depósito", how="left")
-
-    # 4. Padronização Final
-    stats = stats.rename({"Depósito": "Código Depósito", "SKU": "Código SKU"})
-    
-    if "SKU_DESC" in stats.columns: stats = stats.rename({"SKU_DESC": "SKU"})
-    else: stats = stats.with_columns(pl.lit("").alias("SKU"))
-        
-    if "DEP_DESC" in stats.columns: stats = stats.rename({"DEP_DESC": "Depósito"})
-    else: stats = stats.with_columns(pl.lit("").alias("Depósito"))
-
-    final_cols = [
-        "Código Depósito", "Depósito", 
-        "Código SKU", "SKU", 
-        "Média", "Máximo", "Desvio", 
-        "Média + 1 Desv", "Média + 2 Desv", "Média + 3 Desv", 
-        "Percentil 95%"
-    ]
-    
-    ignore = set(final_cols + ["Qtd_Dia", "Data", "Hora", "Pedido", "Caixa", "Rota/Destino"])
-    extra_cols = [c for c in stats.columns if c not in ignore]
-    
-    return stats.select(final_cols + extra_cols), res
-
-def get_bytes(df: pl.DataFrame, fmt: str) -> bytes:
-    b = io.BytesIO()
-    if fmt == 'xlsx': df.write_excel(b)
-    elif fmt == 'csv': df.write_csv(b)
-    return b.getvalue()
+def load_dim_safe(file):
+    if not file: return pl.DataFrame()
+    df = read_file_chunk(file)
+    if not df.is_empty():
+        return df.select([pl.col(c).cast(pl.Utf8) for c in df.columns])
+    return df
 
 # ==============================================================================
-# 3. UI PRINCIPAL (WIZARD FLOW)
+# 3. UI PRINCIPAL
 # ==============================================================================
 
 def main():
@@ -372,7 +175,7 @@ def main():
         try: st.image("Aguia Fundo Branco.png")
         except: st.markdown("### 🦅")
     with c_title:
-        st.markdown("""<h3 style='margin: 0; padding-bottom: 35px; font-weight: 600; color: #1e293b !important;'>Design Soluções | Movimentações Clientes</h3>""", unsafe_allow_html=True)
+        st.markdown("""<h3 style='margin: 0; padding-bottom: 5px; font-weight: 600; color: #1e293b !important;'>Design Soluções | Movimentações Clientes</h3>""", unsafe_allow_html=True)
     with c_act:
         if st.button("🔄 Novo Projeto", type="secondary", use_container_width=True):
             for k in list(st.session_state.keys()): del st.session_state[k]
@@ -385,20 +188,19 @@ def main():
         st.session_state.split_dt = True
         st.session_state.dt_source = None
 
-    # ETAPA 1
+    # --- ETAPA 1: CONFIG ---
     if st.session_state.current_step > 1:
         st.markdown("""<div class="step-summary"><div class="step-check">✓</div><div class="step-text">Etapa 1: Configuração Concluída.</div></div>""", unsafe_allow_html=True)
     if st.session_state.current_step == 1:
         st.markdown("""<div class="step-header-card"><span class="step-badge">ETAPA 1</span><h3 class="step-title">Configuração Inicial</h3></div>""", unsafe_allow_html=True)
-        st.info("Carregue uma amostra para identificar a estrutura dos dados.")
         f_sample = st.file_uploader("Arquivo de Amostra", type=["xlsx", "csv"], label_visibility="collapsed")
         if f_sample:
-            df_s = load_sample(f_sample)
+            df_s = load_sample_optimized(f_sample)
             st.session_state.cols_origem = ["--- Ignorar ---"] + df_s.columns
             st.session_state.current_step = 2
             st.rerun()
 
-    # ETAPA 2
+    # --- ETAPA 2: MAPEAMENTO ---
     if st.session_state.current_step > 2:
         st.markdown("""<div class="step-summary"><div class="step-check">✓</div><div class="step-text">Etapa 2: Mapeamento Definido.</div></div>""", unsafe_allow_html=True)
     if st.session_state.current_step == 2:
@@ -426,11 +228,12 @@ def main():
             st.session_state.current_step = 3
             st.rerun()
 
-    # ETAPA 3
+    # --- ETAPA 3: PROCESSAMENTO (OTIMIZADO) ---
     if st.session_state.current_step > 3:
         st.markdown("""<div class="step-summary"><div class="step-check">✓</div><div class="step-text">Etapa 3: Dados Processados e Enriquecidos.</div></div>""", unsafe_allow_html=True)
     if st.session_state.current_step == 3:
         st.markdown("""<div class="step-header-card"><span class="step-badge">ETAPA 3</span><h3 class="step-title">Processamento em Lote</h3></div>""", unsafe_allow_html=True)
+        
         col_main, col_dim = st.columns([1, 1])
         with col_main:
             st.markdown("##### 1. Movimentação (Lote)")
@@ -442,30 +245,115 @@ def main():
                 f_sku = st.file_uploader("Dimensão SKU", type=["xlsx", "csv"])
                 k_sku, d_sku = None, None
                 if f_sku:
-                    df_pre = load_sample(f_sku)
+                    df_pre = load_sample_optimized(f_sku)
                     k_sku = st.selectbox("Chave Código:", df_pre.columns, key="ks")
                     d_sku = st.selectbox("Col. Descrição:", ["---"] + df_pre.columns, key="ds")
             with tab_d:
                 f_dep = st.file_uploader("Dimensão Depósito", type=["xlsx", "csv"])
                 k_dep, d_dep = None, None
                 if f_dep:
-                    df_pre = load_sample(f_dep)
+                    df_pre = load_sample_optimized(f_dep)
                     k_dep = st.selectbox("Chave Código:", df_pre.columns, key="kd")
                     d_dep = st.selectbox("Col. Descrição:", ["---"] + df_pre.columns, key="dd")
+        
         st.markdown("###")
         if files_mov:
             if st.button("🚀 Processar Dados", type="primary", use_container_width=True):
-                main_df = process_etl_batch(files_mov, st.session_state.mapping, st.session_state.split_dt, st.session_state.dt_source)
-                if not main_df.is_empty():
-                    with st.status("Processando...", expanded=True):
-                        st.write("Consolidando...")
-                        stats_df, detail_df = enrich_and_calculate_stats(main_df, f_sku, k_sku, d_sku, f_dep, k_dep, d_dep)
-                        st.session_state.final_stats = stats_df
-                        st.session_state.detail_df = detail_df
+                progress_bar = st.progress(0, text="Iniciando motor de dados...")
+                dfs_list = []
+                required_cols = ["Depósito", "SKU", "Pedido", "Caixa", "Data", "Hora", "Quantidade", "Rota/Destino"]
+                
+                # --- LOOP SEQUENCIAL (SAFE MEMORY) ---
+                total_files = len(files_mov)
+                for idx, file in enumerate(files_mov):
+                    try:
+                        progress_bar.progress((idx) / total_files, text=f"Lendo: {file.name}")
+                        
+                        # 1. Leitura
+                        df_raw = read_file_chunk(file)
+                        
+                        # 2. Processamento e Limpeza Imediata
+                        df_clean = process_and_clean_single_file(
+                            df_raw, 
+                            st.session_state.mapping, 
+                            st.session_state.split_dt, 
+                            st.session_state.dt_source,
+                            required_cols
+                        )
+                        
+                        if df_clean is not None:
+                            dfs_list.append(df_clean)
+                        
+                        # 3. Liberação de Memória
+                        del df_raw
+                        gc.collect() # Força limpeza RAM
+                        
+                    except Exception as e:
+                        st.error(f"Erro no arquivo {file.name}: {str(e)}")
+                
+                progress_bar.progress(0.9, text="Consolidando dados...")
+                
+                if dfs_list:
+                    # Concatena tudo
+                    main_df = pl.concat(dfs_list, how="vertical_relaxed")
+                    del dfs_list
+                    gc.collect()
+                    
+                    # Carrega dimensões (se houver)
+                    d_sku_df = load_dim_safe(f_sku) if f_sku else None
+                    d_dep_df = load_dim_safe(f_dep) if f_dep else None
+                    
+                    # Enriquecimento
+                    if d_sku_df is not None and not d_sku_df.is_empty():
+                        main_df = main_df.join(d_sku_df, left_on="SKU", right_on=k_sku, how="left", suffix="_sku")
+                        if d_sku: main_df = main_df.rename({d_sku: "SKU_DESC"})
+                    
+                    if d_dep_df is not None and not d_dep_df.is_empty():
+                        main_df = main_df.join(d_dep_df, left_on="Depósito", right_on=k_dep, how="left", suffix="_dep")
+                        if d_dep: main_df = main_df.rename({d_dep: "DEP_DESC"})
+                    
+                    # Calcula Estatísticas (Agregação)
+                    # Filtra nulos antes para economizar processamento
+                    valid_data = main_df.filter(pl.col("Data").is_not_null())
+                    daily_agg = valid_data.group_by(["Depósito", "SKU", "Data"]).agg(pl.col("Quantidade").sum().alias("Qtd_Dia"))
+                    
+                    stats = daily_agg.group_by(["Depósito", "SKU"]).agg([
+                        pl.col("Qtd_Dia").mean().alias("Média"),
+                        pl.col("Qtd_Dia").max().alias("Máximo"),
+                        pl.col("Qtd_Dia").std().fill_null(0).alias("Desvio"),
+                        pl.col("Qtd_Dia").quantile(0.95).alias("Percentil 95%")
+                    ])
+                    
+                    # Traz descrições de volta para a tabela de stats
+                    if "SKU_DESC" in main_df.columns:
+                        desc_s = main_df.group_by("SKU").agg(pl.col("SKU_DESC").first())
+                        stats = stats.join(desc_s, on="SKU", how="left")
+                    else:
+                        stats = stats.with_columns(pl.lit("").alias("SKU_DESC"))
+                        
+                    if "DEP_DESC" in main_df.columns:
+                        desc_d = main_df.group_by("Depósito").agg(pl.col("DEP_DESC").first())
+                        stats = stats.join(desc_d, on="Depósito", how="left")
+                    else:
+                        stats = stats.with_columns(pl.lit("").alias("DEP_DESC"))
+                        
+                    # Renomeia para visualização final
+                    stats = stats.rename({
+                        "Depósito": "Código Depósito", 
+                        "SKU": "Código SKU",
+                        "SKU_DESC": "SKU",
+                        "DEP_DESC": "Depósito"
+                    })
+                    
+                    # Salva no estado
+                    st.session_state.final_stats = stats
+                    st.session_state.detail_df = main_df
                     st.session_state.current_step = 4
                     st.rerun()
+                else:
+                    st.error("Nenhum dado válido foi processado.")
 
-    # ETAPA 4
+    # --- ETAPA 4: DASHBOARD ---
     if st.session_state.current_step > 4:
         st.markdown("""<div class="step-summary"><div class="step-check">✓</div><div class="step-text">Etapa 4: Análise Visual Concluída.</div></div>""", unsafe_allow_html=True)
     if st.session_state.current_step == 4:
@@ -474,6 +362,7 @@ def main():
 
         st.markdown("""<div class="step-header-card"><span class="step-badge">ETAPA 4</span><h3 class="step-title">Dashboard de Análise</h3></div>""", unsafe_allow_html=True)
         
+        # Cria labels para filtros
         stats = stats.with_columns([
             pl.concat_str([pl.col("Código SKU"), pl.lit(" - "), pl.col("SKU").fill_null("")]).alias("Label_SKU"),
             pl.concat_str([pl.col("Código Depósito"), pl.lit(" - "), pl.col("Depósito").fill_null("")]).alias("Label_Dep")
@@ -494,11 +383,11 @@ def main():
             v_stats = v_stats.filter(pl.col("Label_Dep").is_in(sel_deps))
             v_detail = v_detail.filter(pl.col("Depósito").cast(pl.Utf8).is_in(codes_d))
 
+        # Tabela Drill Down
         st.markdown("###")
         st.markdown("**Selecione uma linha na tabela para filtrar o dashboard:**")
-        
         if 'selected_row' in st.session_state:
-            if st.button("❌ Limpar Seleção de Linha", type="secondary"):
+            if st.button("❌ Limpar Seleção", type="secondary"):
                 del st.session_state.selected_row
                 st.rerun()
 
@@ -517,60 +406,66 @@ def main():
             row_data = pdf_display.iloc[idx]
             sel_sku_code = str(row_data["Código SKU"])
             sel_dep_code = str(row_data["Código Depósito"])
-            st.session_state.selected_row = f"{sel_sku_code} | {sel_dep_code}"
+            st.session_state.selected_row = f"{sel_sku_code}|{sel_dep_code}"
             v_detail = v_detail.filter((pl.col("SKU").cast(pl.Utf8) == sel_sku_code) & (pl.col("Depósito").cast(pl.Utf8) == sel_dep_code))
-            st.info(f"🔎 Filtrando dashboard para SKU: {sel_sku_code} no Depósito: {sel_dep_code}")
+            st.info(f"🔎 Filtrando por SKU: {sel_sku_code} e Depósito: {sel_dep_code}")
 
-        st.markdown("###")
+        # KPIs
         if v_detail.height > 0:
+            st.markdown("###")
             qtd_linhas = v_detail.height
-            qtd_unidades = v_detail["Quantidade"].sum() if v_detail["Quantidade"].sum() is not None else 0
+            qtd_unidades = v_detail["Quantidade"].sum() or 0
             qtd_picking = v_detail["Pedido"].n_unique() if "Pedido" in v_detail.columns else 0
             qtd_skus = v_detail["SKU"].n_unique()
             qtd_deps = v_detail["Depósito"].n_unique()
             
+            # Agregação para gráficos
             daily_agg = v_detail.group_by("Data").agg(pl.col("Quantidade").sum()).sort("Data")
+            
             qtd_dias = daily_agg.height
-            avg_day = daily_agg["Quantidade"].mean() if qtd_dias > 0 else 0
-            max_day = daily_agg["Quantidade"].max() if qtd_dias > 0 else 0
+            avg_day = daily_agg["Quantidade"].mean() or 0
+            max_day = daily_agg["Quantidade"].max() or 0
 
             k1, k2, k3, k4, k5 = st.columns(5)
-            k1.markdown(f"""<div class="kpi-card"><div class="kpi-label">Qtde. de códigos de picking</div><div class="kpi-value">{qtd_picking:,}</div></div>""".replace(",", "."), unsafe_allow_html=True)
-            k2.markdown(f"""<div class="kpi-card"><div class="kpi-label">Qtde. de unidades na base</div><div class="kpi-value">{qtd_unidades:,.0f}</div></div>""".replace(",", "."), unsafe_allow_html=True)
-            k3.markdown(f"""<div class="kpi-card"><div class="kpi-label">Qtde. de linhas na base</div><div class="kpi-value">{qtd_linhas:,}</div></div>""".replace(",", "."), unsafe_allow_html=True)
-            k4.markdown(f"""<div class="kpi-card"><div class="kpi-label">Qtde. de SKUs na base</div><div class="kpi-value">{qtd_skus:,}</div></div>""".replace(",", "."), unsafe_allow_html=True)
-            k5.markdown(f"""<div class="kpi-card"><div class="kpi-label">Dias de informação</div><div class="kpi-value">{qtd_dias}</div></div>""", unsafe_allow_html=True)
+            k1.markdown(f"""<div class="kpi-card"><div class="kpi-label">Linhas</div><div class="kpi-value">{qtd_linhas:,}</div></div>""".replace(",", "."), unsafe_allow_html=True)
+            k2.markdown(f"""<div class="kpi-card"><div class="kpi-label">Volume (Unid)</div><div class="kpi-value">{qtd_unidades:,.0f}</div></div>""".replace(",", "."), unsafe_allow_html=True)
+            k3.markdown(f"""<div class="kpi-card"><div class="kpi-label">Picking (Pedidos)</div><div class="kpi-value">{qtd_picking:,}</div></div>""".replace(",", "."), unsafe_allow_html=True)
+            k4.markdown(f"""<div class="kpi-card"><div class="kpi-label">SKUs</div><div class="kpi-value">{qtd_skus:,}</div></div>""".replace(",", "."), unsafe_allow_html=True)
+            k5.markdown(f"""<div class="kpi-card"><div class="kpi-label">Dias</div><div class="kpi-value">{qtd_dias}</div></div>""", unsafe_allow_html=True)
             
             st.markdown("###")
             kt1, kt2, kt3 = st.columns(3)
-            kt1.markdown(f"""<div class="kpi-card"><div class="kpi-label">Depósitos Únicos</div><div class="kpi-value">{qtd_deps}</div><div class="kpi-sub">Locais de Estoque</div></div>""", unsafe_allow_html=True)
-            kt2.markdown(f"""<div class="kpi-card"><div class="kpi-label">Média Diária</div><div class="kpi-value">{avg_day:,.0f}</div><div class="kpi-sub">Unidades / Dia</div></div>""".replace(",", "."), unsafe_allow_html=True)
-            kt3.markdown(f"""<div class="kpi-card"><div class="kpi-label">Pico Máximo</div><div class="kpi-value">{max_day:,.0f}</div><div class="kpi-sub">Recorde em um dia</div></div>""".replace(",", "."), unsafe_allow_html=True)
+            kt1.markdown(f"""<div class="kpi-card"><div class="kpi-label">Depósitos</div><div class="kpi-value">{qtd_deps}</div></div>""", unsafe_allow_html=True)
+            kt2.markdown(f"""<div class="kpi-card"><div class="kpi-label">Média Diária</div><div class="kpi-value">{avg_day:,.0f}</div></div>""".replace(",", "."), unsafe_allow_html=True)
+            kt3.markdown(f"""<div class="kpi-card"><div class="kpi-label">Pico Máximo</div><div class="kpi-value">{max_day:,.0f}</div></div>""".replace(",", "."), unsafe_allow_html=True)
 
-        if v_detail.height > 0:
+            # Gráficos
             st.markdown("---")
             daily_trend = daily_agg.to_pandas()
-            fig_trend = px.bar(daily_trend, x="Data", y="Quantidade", title="Volume Diário de Movimentação", color_discrete_sequence=["#2dd4bf"], template="plotly_white")
-            fig_trend.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_title=None, yaxis_gridcolor="#e2e8f0", font_color="#334155")
+            fig_trend = px.bar(daily_trend, x="Data", y="Quantidade", title="Volume Diário", color_discrete_sequence=["#2dd4bf"], template="plotly_white")
+            fig_trend.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_title=None, font_color="#334155")
             st.plotly_chart(fig_trend, use_container_width=True)
             
-            real_data_pdf = v_detail.group_by("Data").agg(pl.col("Quantidade").sum().alias("Qtd")).to_pandas()
+            # Heatmap 54 Semanas
+            real_data_pdf = daily_agg.to_pandas()
             real_data_pdf["Data"] = pd.to_datetime(real_data_pdf["Data"])
+            
             if not real_data_pdf.empty:
                 min_date = real_data_pdf["Data"].min()
                 date_range = pd.date_range(start=min_date, periods=54 * 7, freq='D')
                 skeleton_df = pd.DataFrame({"Data": date_range})
-                skeleton_df["Data"] = pd.to_datetime(skeleton_df["Data"])
+                
                 hm_final = pd.merge(skeleton_df, real_data_pdf, on="Data", how="left").fillna(0)
                 hm_final["YearWeek"] = hm_final["Data"].dt.strftime("%Y-W%U")
                 hm_final["DiaSemana"] = hm_final["Data"].dt.strftime("%a")
                 
                 fig_hm = px.density_heatmap(
-                    hm_final, x="YearWeek", y="DiaSemana", z="Qtd", color_continuous_scale="Greens",
-                    title="Intensidade de Atividade (54 Semanas)", category_orders={"DiaSemana": ["Sun", "Sat", "Fri", "Thu", "Wed", "Tue", "Mon"]},
+                    hm_final, x="YearWeek", y="DiaSemana", z="Qtd", 
+                    color_continuous_scale="Greens", title="Intensidade (54 Semanas)",
+                    category_orders={"DiaSemana": ["Sun", "Sat", "Fri", "Thu", "Wed", "Tue", "Mon"]},
                     range_color=[0, hm_final["Qtd"].max()], template="plotly_white"
                 )
-                fig_hm.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Semana", yaxis_title=None, margin=dict(l=20, r=20, t=40, b=20), xaxis=dict(showgrid=False), yaxis=dict(showgrid=False), font_color="#334155")
+                fig_hm.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_title=None, margin=dict(l=20, r=20, t=40, b=20), font_color="#334155")
                 fig_hm.update_traces(xgap=3, ygap=3, showscale=True)
                 st.plotly_chart(fig_hm, use_container_width=True)
         
@@ -579,28 +474,30 @@ def main():
             st.session_state.current_step = 5
             st.rerun()
 
-    # ETAPA 5
+    # --- ETAPA 5: DOWNLOAD ---
     if st.session_state.current_step == 5:
-        stats_final = st.session_state.final_stats
-        cols_to_drop = [c for c in ["Label_SKU", "Label_Dep"] if c in stats_final.columns]
-        if cols_to_drop: stats_final = stats_final.drop(cols_to_drop)
         st.markdown("""<div class="step-header-card"><span class="step-badge">ETAPA 5</span><h3 class="step-title">Downloads</h3></div>""", unsafe_allow_html=True)
-        st.success("Processo concluído com sucesso.")
+        st.success("Processo concluído.")
+        
+        # Prepara download otimizado (XLSX Writer)
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+            st.session_state.final_stats.to_pandas().to_excel(writer, index=False, sheet_name='Analise')
+        
         c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("##### 📄 Tabela Analítica")
-            b_xls = get_bytes(stats_final, 'xlsx')
-            st.download_button("Baixar Excel (.xlsx)", b_xls, "analise_sku.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-        with c2:
-            st.markdown("##### 📦 Base Detalhada")
-            if st.button("Gerar Arquivo Completo (CSV)", use_container_width=True):
-                with st.spinner("Gerando..."):
-                    b_det = get_bytes(st.session_state.detail_df, 'csv')
-                    st.session_state.b_det = b_det
-            if 'b_det' in st.session_state:
-                st.download_button("📥 Baixar CSV Completo", st.session_state.b_det, "base_completa.csv", "text/csv", use_container_width=True)
+        c1.download_button("Baixar Excel (.xlsx)", buffer.getvalue(), "analise.xlsx", "application/vnd.ms-excel", use_container_width=True)
+        
+        if c2.button("Gerar CSV Completo", use_container_width=True):
+            with st.spinner("Gerando..."):
+                b_det = io.BytesIO()
+                st.session_state.detail_df.write_csv(b_det)
+                st.session_state.b_det = b_det.getvalue()
+        
+        if 'b_det' in st.session_state:
+            c2.download_button("📥 Baixar CSV", st.session_state.b_det, "completo.csv", "text/csv", use_container_width=True)
+
         st.markdown("---")
-        if st.button("⬅️ Voltar para Análise"):
+        if st.button("⬅️ Voltar"):
             st.session_state.current_step = 4
             st.rerun()
 
