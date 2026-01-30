@@ -1,0 +1,7 @@
+streamlit
+polars
+pandas
+fastexcel
+xlsx2csv
+openpyxl
+plotly
