@@ -255,8 +255,7 @@ def main():
     c_logo, c_title, c_act = st.columns([0.15, 0.65, 0.2], vertical_alignment="bottom")
     
     with c_logo:
-        try: st.image("Aguia Fundo Branco.png", use_container_width=True)
-        except: st.markdown("### 🦅")
+        st.image("Aguia Fundo Branco.png", use_container_width=True)
         
     with c_title:
         st.markdown("""
@@ -483,7 +482,7 @@ def main():
         if v_detail.height > 0:
             qtd_linhas = v_detail.height
             
-            # SAFE KPI Calculation
+            # SAFE KPI Calculation (prevents NoneType error)
             qtd_unidades = v_detail["Quantidade"].sum()
             qtd_unidades = qtd_unidades if qtd_unidades is not None else 0
             
@@ -532,64 +531,34 @@ def main():
             )
             st.plotly_chart(fig_trend, use_container_width=True)
             
-            # 2. HEATMAP FIXO DE 54 SEMANAS (GITHUB STYLE) - CORREÇÃO DE TIPO
-            # ==============================================================================
+            # 2. HEATMAP "GITHUB STYLE"
+            hm_data = (
+                v_detail.filter(pl.col("Data").is_not_null())
+                .group_by("Data")
+                .agg(pl.col("Quantidade").sum().alias("Qtd"))
+                .sort("Data")
+                .with_columns([
+                    pl.col("Data").dt.strftime("%Y-W%U").alias("YearWeek"),
+                    pl.col("Data").dt.strftime("%a").alias("DiaSemana")
+                ])
+                .to_pandas()
+            )
             
-            # 2.1. Determinar intervalo de datas fixo ou baseado nos dados
-            if v_detail.height > 0:
-                # Converte para Pandas para facilitar manipulação de Data/Hora
-                real_data_pdf = (
-                    v_detail.group_by("Data")
-                    .agg(pl.col("Quantidade").sum().alias("Qtd"))
-                    .to_pandas()
-                )
-                
-                # Garante que a coluna 'Data' seja datetime64[ns]
-                real_data_pdf["Data"] = pd.to_datetime(real_data_pdf["Data"])
-                
-                if not real_data_pdf.empty:
-                    min_date = real_data_pdf["Data"].min()
-                    
-                    # Cria range de 54 semanas a partir do início dos dados (aprox 1 ano)
-                    date_range = pd.date_range(start=min_date, periods=54 * 7, freq='D')
-                    
-                    # Cria dataframe esqueleto (todas as datas) e força datetime64[ns]
-                    skeleton_df = pd.DataFrame({"Data": date_range})
-                    skeleton_df["Data"] = pd.to_datetime(skeleton_df["Data"])
-                    
-                    # Join Esqueleto com Dados Reais
-                    hm_final = pd.merge(skeleton_df, real_data_pdf, on="Data", how="left").fillna(0)
-                    
-                    # Prepara colunas para o Plotly
-                    hm_final["YearWeek"] = hm_final["Data"].dt.strftime("%Y-W%U")
-                    hm_final["DiaSemana"] = hm_final["Data"].dt.strftime("%a")
-                    
-                    # Ordenação para o gráfico (Domingo em baixo ou em cima, aqui vamos padrão EN)
-                    fig_hm = px.density_heatmap(
-                        hm_final, 
-                        x="YearWeek", 
-                        y="DiaSemana", 
-                        z="Qtd",
-                        color_continuous_scale="Greens",
-                        title="Intensidade de Atividade (54 Semanas)",
-                        category_orders={
-                            "DiaSemana": ["Sun", "Sat", "Fri", "Thu", "Wed", "Tue", "Mon"] # Segue ordem visual do Github
-                        },
-                        range_color=[0, hm_final["Qtd"].max()] # Fixa escala para não distorcer com zeros
-                    )
-                    
-                    fig_hm.update_layout(
-                        paper_bgcolor='rgba(0,0,0,0)', 
-                        plot_bgcolor='rgba(0,0,0,0)',
-                        xaxis_title="Semana", 
-                        yaxis_title=None,
-                        margin=dict(l=20, r=20, t=40, b=20),
-                        xaxis=dict(showgrid=False),
-                        yaxis=dict(showgrid=False)
-                    )
-                    fig_hm.update_traces(xgap=3, ygap=3, showscale=True)
-                    st.plotly_chart(fig_hm, use_container_width=True)
-            # ==============================================================================
+            fig_hm = px.density_heatmap(
+                hm_data, x="YearWeek", y="DiaSemana", z="Qtd",
+                color_continuous_scale="Greens",
+                title="Intensidade de Atividade (Semanal)",
+                category_orders={
+                    "DiaSemana": ["Sun", "Sat", "Fri", "Thu", "Wed", "Tue", "Mon"]
+                }
+            )
+            fig_hm.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title="Semana", yaxis_title=None,
+                margin=dict(l=20, r=20, t=40, b=20)
+            )
+            fig_hm.update_traces(xgap=3, ygap=3)
+            st.plotly_chart(fig_hm, use_container_width=True)
         
         st.markdown("###")
         if st.button("Ir para Exportação", type="primary"):
