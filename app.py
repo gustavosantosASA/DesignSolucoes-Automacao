@@ -8,7 +8,7 @@ import time
 from datetime import timedelta
 
 # ==============================================================================
-# 1. SETUP & CSS (FORÇANDO MODO CLARO / LIGHT MODE)
+# 1. SETUP & CSS (FORÇANDO TOTALMENTE O LIGHT MODE)
 # ==============================================================================
 
 def setup_page():
@@ -19,31 +19,36 @@ def setup_page():
         initial_sidebar_state="collapsed"
     )
 
-    # CSS com cores HEXADECIMAIS fixas para garantir o visual claro
-    # independente da configuração do usuário.
+    # O SEGREDO ESTÁ AQUI:
+    # Sobrescrevemos as variáveis :root do Streamlit. 
+    # Isso engana os componentes nativos (inputs, selects, uploaders) para usarem cores claras
+    # mesmo se o navegador estiver em Dark Mode.
     st.markdown("""
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         
-        /* Força fundo claro e fonte escura globalmente */
-        .stApp { 
-            background-color: #f8fafc !important; 
-            font-family: 'Inter', sans-serif; 
-            color: #334155 !important; 
+        :root {
+            --primary-color: #2563eb;
+            --background-color: #f8fafc;
+            --secondary-background-color: #ffffff;
+            --text-color: #334155;
+            --font: "Inter", sans-serif;
+        }
+
+        /* Força fundo claro globalmente */
+        .stApp {
+            background-color: #f8fafc;
+            color: #334155;
         }
         
         [data-testid="stSidebar"] { display: none; }
         #MainMenu, header, footer { visibility: hidden; }
         
-        /* Força cor de textos para ignorar modo noturno do Streamlit */
-        h1, h2, h3, h4, h5, h6, p, div, span, label {
-            color: #334155;
+        /* Força textos para escuro */
+        h1, h2, h3, h4, h5, h6, p, div, span, label, li {
+            color: #334155 !important;
         }
         
-        .stMarkdown h3 {
-            color: #1e293b !important;
-        }
-
         /* --- ESTILO DO CABEÇALHO DA ETAPA (CARD) --- */
         .step-header-card {
             background-color: #ffffff; 
@@ -58,7 +63,7 @@ def setup_page():
         }
         
         .step-badge {
-            background-color: #eff6ff; color: #2563eb; font-weight: 700;
+            background-color: #eff6ff; color: #2563eb !important; font-weight: 700;
             padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; border: 1px solid #bfdbfe;
             white-space: nowrap;
         }
@@ -74,7 +79,7 @@ def setup_page():
             padding: 12px 20px; margin-bottom: 15px; display: flex; align-items: center; gap: 15px;
         }
         .step-check {
-            background-color: #16a34a; color: white; width: 24px; height: 24px;
+            background-color: #16a34a; color: white !important; width: 24px; height: 24px;
             border-radius: 50%; display: flex; align-items: center; justify-content: center;
             font-weight: bold; font-size: 12px;
         }
@@ -92,14 +97,42 @@ def setup_page():
         .kpi-label { font-size: 0.75rem; color: #64748b !important; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
         .kpi-sub { font-size: 0.7rem; color: #94a3b8 !important; margin-top: 2px; }
 
-        /* UI ELEMENTS */
-        div[data-baseweb="select"] > div { 
-            border-radius: 8px; 
-            background-color: white; 
-            border-color: #e2e8f0;
-            color: #334155;
+        /* --- CORREÇÃO DE INPUTS E COMPONENTES --- 
+           Isso força os fundos dos inputs (selects, file uploader) a serem brancos
+        */
+        div[data-baseweb="select"] > div {
+            background-color: #ffffff !important;
+            border-color: #e2e8f0 !important;
+            color: #334155 !important;
         }
-        div.stButton > button { border-radius: 8px; font-weight: 600; width: 100%; }
+        
+        /* Dropdown menu items */
+        div[role="listbox"] ul {
+            background-color: #ffffff !important;
+        }
+        
+        /* File Uploader */
+        [data-testid="stFileUploadDropzone"] {
+            background-color: #ffffff !important;
+            border-color: #e2e8f0 !important;
+        }
+        [data-testid="stFileUploadDropzone"] div, [data-testid="stFileUploadDropzone"] span {
+            color: #64748b !important;
+        }
+
+        /* Botões */
+        div.stButton > button { 
+            border-radius: 8px; 
+            font-weight: 600; 
+            width: 100%;
+            background-color: #ffffff;
+            color: #334155;
+            border: 1px solid #e2e8f0;
+        }
+        div.stButton > button:hover {
+            border-color: #2563eb;
+            color: #2563eb;
+        }
         
         /* Remove padding extra do topo */
         .block-container { padding-top: 2rem; }
@@ -193,7 +226,6 @@ def process_etl_batch(files, mapping, split_dt, dt_source):
 def enrich_and_calculate_stats(main_df, dim_sku_file, key_sku, desc_sku, dim_dep_file, key_dep, desc_dep):
     res = main_df
     
-    # 1. Enriquecimento
     if dim_sku_file and key_sku:
         d_sku = load_dim_full(dim_sku_file)
         if not d_sku.is_empty() and key_sku in d_sku.columns:
@@ -210,7 +242,6 @@ def enrich_and_calculate_stats(main_df, dim_sku_file, key_sku, desc_sku, dim_dep
             if desc_dep and desc_dep in d_dep.columns: d_dep = d_dep.rename({desc_dep: "DEP_DESC"})
             res = res.join(d_dep, left_on="Depósito", right_on=key_dep, how="left", suffix="_dep_dim")
 
-    # 2. Estatísticas
     daily_agg = (
         res.filter(pl.col("Data").is_not_null())
         .group_by(["Depósito", "SKU", "Data"])
@@ -230,7 +261,6 @@ def enrich_and_calculate_stats(main_df, dim_sku_file, key_sku, desc_sku, dim_dep
         (pl.col("Média") + (pl.col("Desvio") * 3)).alias("Média + 3 Desv"),
     ])
     
-    # 3. Traz Descrições
     if "SKU_DESC" in res.columns:
         desc_s = res.group_by("SKU").agg(pl.col("SKU_DESC").first())
         stats = stats.join(desc_s, on="SKU", how="left")
@@ -239,7 +269,6 @@ def enrich_and_calculate_stats(main_df, dim_sku_file, key_sku, desc_sku, dim_dep
         desc_d = res.group_by("Depósito").agg(pl.col("DEP_DESC").first())
         stats = stats.join(desc_d, on="Depósito", how="left")
 
-    # 4. Padronização Final
     stats = stats.rename({"Depósito": "Código Depósito", "SKU": "Código SKU"})
     
     if "SKU_DESC" in stats.columns: stats = stats.rename({"SKU_DESC": "SKU"})
@@ -547,44 +576,38 @@ def main():
             fig_trend = px.bar(
                 daily_trend, x="Data", y="Quantidade",
                 title="Volume Diário de Movimentação",
-                color_discrete_sequence=["#2dd4bf"]
+                color_discrete_sequence=["#2dd4bf"],
+                template="plotly_white" # Força tema claro no gráfico
             )
             fig_trend.update_layout(
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                xaxis_title=None, yaxis_gridcolor="#e2e8f0"
+                xaxis_title=None, yaxis_gridcolor="#e2e8f0",
+                font_color="#334155" # Força texto escuro no gráfico
             )
             st.plotly_chart(fig_trend, use_container_width=True)
             
             # 2. HEATMAP FIXO DE 54 SEMANAS (GITHUB STYLE)
             if v_detail.height > 0:
-                # Converte para Pandas para facilitar manipulação de Data/Hora
                 real_data_pdf = (
                     v_detail.group_by("Data")
                     .agg(pl.col("Quantidade").sum().alias("Qtd"))
                     .to_pandas()
                 )
                 
-                # Garante que a coluna 'Data' seja datetime64[ns]
                 real_data_pdf["Data"] = pd.to_datetime(real_data_pdf["Data"])
                 
                 if not real_data_pdf.empty:
                     min_date = real_data_pdf["Data"].min()
-                    
-                    # Cria range de 54 semanas a partir do início dos dados (aprox 1 ano)
                     date_range = pd.date_range(start=min_date, periods=54 * 7, freq='D')
                     
-                    # Cria dataframe esqueleto (todas as datas) e força datetime64[ns]
                     skeleton_df = pd.DataFrame({"Data": date_range})
                     skeleton_df["Data"] = pd.to_datetime(skeleton_df["Data"])
                     
-                    # Join Esqueleto com Dados Reais
                     hm_final = pd.merge(skeleton_df, real_data_pdf, on="Data", how="left").fillna(0)
                     
-                    # Prepara colunas para o Plotly
                     hm_final["YearWeek"] = hm_final["Data"].dt.strftime("%Y-W%U")
                     hm_final["DiaSemana"] = hm_final["Data"].dt.strftime("%a")
                     
-                    # Ordenação para o gráfico (Domingo em baixo ou em cima, aqui vamos padrão EN)
                     fig_hm = px.density_heatmap(
                         hm_final, 
                         x="YearWeek", 
@@ -592,10 +615,11 @@ def main():
                         z="Qtd",
                         color_continuous_scale="Greens",
                         title="Intensidade de Atividade (54 Semanas)",
+                        template="plotly_white", # Força tema claro no gráfico
                         category_orders={
-                            "DiaSemana": ["Sun", "Sat", "Fri", "Thu", "Wed", "Tue", "Mon"] # Segue ordem visual do Github
+                            "DiaSemana": ["Sun", "Sat", "Fri", "Thu", "Wed", "Tue", "Mon"]
                         },
-                        range_color=[0, hm_final["Qtd"].max()] # Fixa escala para não distorcer com zeros
+                        range_color=[0, hm_final["Qtd"].max()]
                     )
                     
                     fig_hm.update_layout(
@@ -605,7 +629,8 @@ def main():
                         yaxis_title=None,
                         margin=dict(l=20, r=20, t=40, b=20),
                         xaxis=dict(showgrid=False),
-                        yaxis=dict(showgrid=False)
+                        yaxis=dict(showgrid=False),
+                        font_color="#334155" # Força texto escuro no gráfico
                     )
                     fig_hm.update_traces(xgap=3, ygap=3, showscale=True)
                     st.plotly_chart(fig_hm, use_container_width=True)
